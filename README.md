@@ -36,6 +36,9 @@ code signing, and troubleshooting.
 - Requirements and Git/Bitbucket repository workflows
 - Living source links, architecture drift states, branch/commit context, settings,
   and SVG/HTML/model export surfaces
+- Dual diagram engines: Karya's editable living C4 canvas and Mermaid Studio
+- Mermaid 11.16 support for all 30 documented diagram families, with live source
+  editing, syntax validation, per-type templates, theme-aware previews, and SVG export
 
 Provider authentication, hosted LLM calls, and remote Git OAuth are intentionally
 isolated behind the desktop IPC boundaries so production credentials can be added

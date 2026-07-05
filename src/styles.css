@@ -676,3 +676,125 @@ html[data-theme="sand"] .node-title,
 html[data-theme="sand"] .diagram-edge .edge-label { fill: #75685b; }
 html[data-theme="sand"] .node-subtitle,
 html[data-theme="sand"] .diagram-edge text { fill: #9b8978; }
+
+/* Mermaid Studio */
+.engine-toggle {
+  height: 35px; padding: 4px; border-radius: 12px; display: flex; gap: 3px;
+  background: #e6edf4; box-shadow: var(--inset);
+}
+.engine-toggle button {
+  height: 27px; padding: 0 9px; border-radius: 9px; background: transparent;
+  display: flex; align-items: center; gap: 5px; color: #8196a0; font-size: 8px; font-weight: 750;
+}
+.engine-toggle button.active { color: #159bd7; background: #e9eff5; box-shadow: var(--raised-small); }
+.mermaid-studio {
+  flex: 1 1 auto; min-height: 330px; border-radius: 22px; overflow: hidden;
+  background: #e7edf4; box-shadow: var(--raised); display: flex;
+}
+.mermaid-catalog {
+  width: 215px; flex: 0 0 215px; display: flex; flex-direction: column; padding: 13px 11px;
+  border-right: 1px solid rgba(163,177,198,.25); box-shadow: 5px 0 13px rgba(163,177,198,.18);
+}
+.mermaid-brand { display: flex; align-items: center; gap: 8px; padding: 0 3px 11px; }
+.mermaid-brand > span {
+  width: 31px; height: 31px; border-radius: 10px; display: grid; place-items: center; color: white;
+  background: linear-gradient(135deg, var(--primary), var(--primary-deep)); box-shadow: var(--glow);
+}
+.mermaid-brand > div { display: flex; flex-direction: column; gap: 2px; }
+.mermaid-brand strong { font-size: 9.5px; color: #526d78; }
+.mermaid-brand small { font-size: 6.8px; color: var(--muted); }
+.mermaid-search {
+  height: 33px; flex: 0 0 33px; margin-bottom: 11px; padding: 0 9px; display: flex; align-items: center; gap: 7px;
+  border-radius: 10px; box-shadow: var(--inset); color: #8ca0aa;
+}
+.mermaid-search input { width: 100%; border: 0; outline: 0; background: transparent; font-size: 8px; }
+.catalog-scroll { overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(79,195,247,.45) transparent; padding: 1px 4px 10px 1px; }
+.catalog-group + .catalog-group { margin-top: 13px; }
+.catalog-group > span {
+  display: block; margin: 0 7px 5px; color: #98a9b1; font-size: 7px; letter-spacing: 1px; font-weight: 850; text-transform: uppercase;
+}
+.catalog-group button {
+  width: 100%; min-height: 40px; padding: 6px 7px; border-radius: 10px; display: flex; align-items: center; gap: 7px;
+  text-align: left; background: transparent; position: relative;
+}
+.catalog-group button:hover { background: rgba(232,238,244,.6); }
+.catalog-group button.active { color: #159bd7; background: #e7edf4; box-shadow: var(--raised-small); }
+.catalog-group button > svg { flex: 0 0 auto; }
+.catalog-group button > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.catalog-group button strong { font-size: 8px; color: inherit; }
+.catalog-group button small { font-size: 6.2px; color: #9aabb3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.catalog-group button em {
+  padding: 2px 4px; border-radius: 5px; font-size: 5.5px; font-style: normal; color: #b2782f;
+  background: rgba(240,180,92,.15);
+}
+.mermaid-workbench { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mermaid-toolbar {
+  height: 44px; flex: 0 0 44px; padding: 0 11px 0 15px; display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid rgba(163,177,198,.22);
+}
+.mermaid-toolbar > div { display: flex; align-items: center; gap: 7px; }
+.mermaid-toolbar > div:first-child svg { color: #21a7df; }
+.mermaid-toolbar strong { font-size: 9px; color: #55707b; }
+.mermaid-toolbar span { padding: 4px 7px; border-radius: 7px; background: rgba(240,180,92,.12); color: #b17b36; font-size: 6.5px; font-weight: 750; }
+.mermaid-toolbar button {
+  height: 28px; min-width: 28px; padding: 0 7px; border-radius: 9px; background: #e7edf4; box-shadow: var(--raised-small);
+  display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 7.5px; font-weight: 750;
+}
+.mermaid-toolbar .render-button { color: white; background: linear-gradient(135deg, var(--primary), var(--primary-deep)); box-shadow: var(--glow); }
+.mermaid-toolbar .mermaid-export { color: #159bd7; padding-inline: 9px; }
+.mermaid-toolbar .catalog-check { min-width: 62px; color: #4bad83; }
+.mermaid-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(270px, 42%) 1fr; }
+.mermaid-split.editor-only { grid-template-columns: 1fr; }
+.mermaid-editor, .mermaid-preview { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mermaid-editor { border-right: 1px solid rgba(163,177,198,.2); }
+.pane-label {
+  height: 31px; flex: 0 0 31px; padding: 0 11px; display: flex; align-items: center; justify-content: space-between;
+  background: rgba(225,233,241,.44);
+}
+.pane-label span { font-size: 6.5px; letter-spacing: 1px; font-weight: 850; color: #8197a1; }
+.pane-label small { font-size: 6px; color: #9aabb3; }
+.code-wrap { flex: 1; min-height: 0; display: flex; padding: 11px 8px; box-shadow: var(--inset); }
+.code-wrap pre {
+  width: 27px; flex: 0 0 27px; margin: 0; padding: 3px 5px 3px 0; border-right: 1px solid rgba(163,177,198,.3);
+  color: #9aadb6; text-align: right; font: 8px/1.65 "Cascadia Code", Consolas, monospace; user-select: none;
+}
+.code-wrap textarea {
+  flex: 1; width: 100%; min-height: 100%; resize: none; border: 0; outline: 0; padding: 3px 9px;
+  background: transparent; color: #526d78; font: 8.5px/1.65 "Cascadia Code", Consolas, monospace; white-space: pre; overflow: auto;
+}
+.mermaid-preview { position: relative; overflow: hidden; }
+.mermaid-svg {
+  flex: 1; min-height: 0; padding: 14px; overflow: auto; display: grid; place-items: center;
+  background-image: radial-gradient(circle, rgba(163,177,198,.32) 1px, transparent 1px); background-size: 24px 24px;
+}
+.mermaid-svg svg { max-width: 100% !important; max-height: 100% !important; height: auto; filter: drop-shadow(5px 7px 6px rgba(101,123,141,.18)); }
+.mermaid-error { flex: 1; padding: 27px; display: flex; justify-content: center; align-items: flex-start; gap: 11px; }
+.mermaid-error > span {
+  width: 37px; height: 37px; border-radius: 12px; display: grid; place-items: center; color: #d99038;
+  background: rgba(240,180,92,.12); box-shadow: var(--raised-small);
+}
+.mermaid-error > div { max-width: 420px; }
+.mermaid-error strong { font-size: 10px; color: #a36c2d; }
+.mermaid-error pre { white-space: pre-wrap; color: #889ca5; font: 7.5px/1.5 "Cascadia Code", monospace; }
+.mermaid-loading { flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; color: #62bfe5; font-size: 8px; }
+.valid-badge {
+  position: absolute; right: 13px; bottom: 12px; height: 25px; padding: 0 8px; border-radius: 9px;
+  display: flex; align-items: center; gap: 5px; color: #42ad7e; background: rgba(232,238,244,.94);
+  box-shadow: var(--raised-small); font-size: 6.5px; font-weight: 800;
+}
+html[data-theme="midnight"] .engine-toggle,
+html[data-theme="midnight"] .mermaid-studio,
+html[data-theme="midnight"] .catalog-group button.active,
+html[data-theme="midnight"] .mermaid-toolbar button { background: #293746; }
+html[data-theme="midnight"] .engine-toggle button.active { background: #314253; }
+html[data-theme="midnight"] .mermaid-studio { color: #c7d6de; }
+html[data-theme="midnight"] .pane-label { background: rgba(29,40,51,.6); }
+html[data-theme="midnight"] .code-wrap textarea { color: #c1d1d9; }
+html[data-theme="midnight"] .mermaid-svg { background-color: #23303c; background-image: radial-gradient(circle, rgba(102,126,143,.25) 1px, transparent 1px); }
+html[data-theme="midnight"] .valid-badge { background: #2b3a48; }
+html[data-theme="sand"] .engine-toggle,
+html[data-theme="sand"] .mermaid-studio,
+html[data-theme="sand"] .catalog-group button.active,
+html[data-theme="sand"] .mermaid-toolbar button { background: #e9dfd0; }
+html[data-theme="sand"] .engine-toggle button.active { background: #f1e8dc; color: #ce8335; }
+html[data-theme="sand"] .mermaid-svg { background-color: #eee6da; background-image: radial-gradient(circle, rgba(164,147,129,.26) 1px, transparent 1px); }

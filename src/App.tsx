@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bell, Check, ChevronDown, CloudDownload, Command, FileJson2, FileOutput,
+  Bell, Check, ChevronDown, CloudDownload, Code2, Command, FileJson2, FileOutput,
   GitCompareArrows, HelpCircle, Menu, MoreHorizontal, PanelRightOpen, RefreshCw,
-  Settings, Share2, Sparkles, WandSparkles, X,
+  Settings, Share2, Sparkles, WandSparkles, X, Network,
 } from "lucide-react";
 import AgentConsole from "./components/AgentConsole";
 import DiagramCanvas from "./components/DiagramCanvas";
+import MermaidStudio from "./components/MermaidStudio";
 import { Inspector, NodeEditorModal, RelationshipModal, SettingsPanel, SourceModal } from "./components/Panels";
 import Sidebar from "./components/Sidebar";
 import { diagramEdges, diagramNodes, initialAgents } from "./data";
@@ -50,6 +51,7 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem("karya:edges") || "") || diagramEdges; } catch { return diagramEdges; }
   });
   const [activeDiagram, setActiveDiagram] = useState("context");
+  const [renderMode, setRenderMode] = useState<"living" | "mermaid">("living");
   const [agents, setAgents] = useState(initialAgents);
   const [selectedNode, setSelectedNode] = useState<DiagramNode | null>(null);
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
@@ -256,10 +258,14 @@ export default function App() {
               <button className="view-menu"><MoreHorizontal size={18} /></button>
             </div>
             <div className="header-actions">
+              <div className="engine-toggle" aria-label="Diagram engine">
+                <button className={renderMode === "living" ? "active" : ""} onClick={() => setRenderMode("living")}><Network size={14} /> Living</button>
+                <button className={renderMode === "mermaid" ? "active" : ""} onClick={() => { setRenderMode("mermaid"); setSelectedNode(null); }}><Code2 size={14} /> Mermaid</button>
+              </div>
               <button className="drift-button"><GitCompareArrows size={16} /><span>Drift</span><em>{driftCount}</em></button>
               <button title="Regenerate architecture" className={running ? "spin" : ""} onClick={() => runPipeline()}><RefreshCw size={16} /></button>
               <button aria-label="Workspace settings" onClick={() => setSettingsOpen(true)}><Settings size={16} /></button>
-              <div className="export-wrap">
+              {renderMode === "living" && <div className="export-wrap">
                 <button className="export-button" onClick={() => setExportOpen(!exportOpen)}><Share2 size={16} /> Export <ChevronDown size={13} /></button>
                 {exportOpen && (
                   <div className="export-menu">
@@ -268,13 +274,13 @@ export default function App() {
                     <button onClick={exportSvg}><FileJson2 size={16} /><span><strong>Model JSON</strong><small>Structured graph data</small></span></button>
                   </div>
                 )}
-              </div>
+              </div>}
               <button className="generate-button" onClick={() => setSourceOpen(true)}><WandSparkles size={16} /> Generate</button>
             </div>
           </div>
 
           <div className="content-stack">
-            <DiagramCanvas
+            {renderMode === "living" ? <DiagramCanvas
               nodes={nodes}
               edges={edges}
               selectedId={selectedNode?.id || null}
@@ -289,7 +295,10 @@ export default function App() {
               connectFrom={connectFrom}
               onToggleConnect={() => { setConnectMode(!connectMode); setConnectFrom(null); setRelationshipDraft(null); }}
               onNodeActivate={activateNode}
-            />
+            /> : <MermaidStudio theme={theme} onToast={(message) => {
+              setToast(message);
+              window.setTimeout(() => setToast(null), 2600);
+            }} />}
             <AgentConsole
               agents={agents}
               collapsed={consoleCollapsed}
