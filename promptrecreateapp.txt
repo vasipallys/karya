@@ -1,0 +1,318 @@
+RECREATE APPLICATION PROMPT — STORY POINTER
+Last updated: 2026-07-06
+
+Build a complete, production-ready application named “Story Pointer”. Do not create a mockup or partial prototype. Implement the backend, frontend, persistence, streaming workflow, tests, setup files, sample-data scripts, README usage flow, and this recreation prompt.
+
+PRODUCT PURPOSE
+
+Story Pointer is an evidence-led story-point estimator and project-planning workspace for React/Spring teams. It combines:
+
+1. A checkpointed AI estimation pipeline that produces modified-Fibonacci points: 1, 2, 3, 5, 8, or 13.
+2. A persistent interactive C4 workspace:
+   - L1 = system / initiative
+   - L2 = container / epic
+   - L3 = component / story
+   - L4 = code / task
+3. An L1 operating-plan workspace for detailed requirements, reviews/audit, Word/PowerPoint exports, tribes/squads, people, delivery plans, cost, architecture, and infrastructure.
+4. Jira, repository-scan, and spreadsheet ingestion.
+5. Deterministic point roll-ups from stories to epics and initiatives.
+
+TECHNOLOGY AND RUNTIME
+
+- Python 3.11+.
+- FastAPI, Pydantic, pydantic-settings, LangChain, and LangGraph.
+- AsyncSqliteSaver for durable graph checkpoints, with MemorySaver fallback.
+- stdlib sqlite3 for application persistence.
+- React 19 with Vite and a Material Design 3 shell.
+- React Flow for the C4 canvas.
+- Mermaid.js for editable architecture and infrastructure diagrams.
+- react-markdown and remark-gfm for safe GitHub-flavored Markdown requirement rendering.
+- python-docx and python-pptx for native Office exports with rendered Mermaid images.
+- Electron and electron-builder for Windows/macOS desktop mode.
+- Server-Sent Events for all estimation progress and results.
+- pytest, Vitest, jsdom, and Testing Library.
+
+REPOSITORY STRUCTURE
+
+- backend/api/main.py: FastAPI application, lifespan, errors, health/config, Jira, upload, and estimation routes.
+- backend/api/streaming.py: reusable SSE helpers and final-result enforcement.
+- backend/graph/: LangGraph state, nodes, routing, build, and checkpoint installation.
+- backend/llm/factory.py: the only application module allowed to know provider names.
+- backend/llm/mock.py: deterministic offline structured-output model.
+- backend/projects/: project/link models, router, and store.
+- backend/c4/: C4 models, validation, store, service, imports, and router.
+- backend/planning/: L1 plan models, validation, normalized store, metrics, versioned requirements/review/audit, Office exports, and router.
+- backend/jira/: named-instance registry, clients, and auth handling.
+- backend/ingest/: spreadsheet parsing and mapping.
+- backend/storage/db.py: SQLite schema, connection lifecycle, IDs, and timestamps.
+- desktop/electron/: Electron main/preload process that starts or reuses the local FastAPI backend.
+- desktop/backend_launcher.py: backend entrypoint used by Electron dev and PyInstaller.
+- desktop/pyinstaller/: PyInstaller spec for the bundled backend executable.
+- frontend/src/screens/: project home, wizard, quick estimate, and project workspace.
+- frontend/src/c4/: C4 canvas, inspector, estimation dialog, and roll-up dashboard.
+- frontend/src/planning/: L1 planning shell, requirements reader/editor/review workspace, tribes/squads, work/cost, Mermaid studio, and dialogs.
+- frontend/src/api/client.js: JSON and SSE client.
+- frontend/src/md3.css: Material 3 workspace and L1 planning styles.
+- backend/tests/: backend domain and graph tests.
+- scripts/: demo and detailed banking seed scripts.
+
+CORE ESTIMATION PIPELINE
+
+Implement this checkpointed LangGraph flow:
+
+score_parameters
+→ identify_drivers
+→ compare_to_anchors
+→ derive_points
+→ conditional spike_split_branch when points == 13 or uncertainty is High
+→ write_plain_language_reasoning
+→ detect_hidden_tasks
+→ assess_risks
+→ recommend_split
+
+Requirements:
+
+- Define EstimationState and one Pydantic structured-output schema per node.
+- Score complexity, volume, uncertainty, React scope, Spring scope, existing-code scope, dependencies, NFRs, testing, compliance/audit, familiarity, and Definition-of-Done overhead.
+- Identify the two or three decisive drivers and compare with six fixed stories in backend/anchors.py.
+- Return only 1/2/3/5/8/13.
+- Every final result must contain both tldr and plain_language_why.
+- Never emit points before those explanations exist.
+- Include layer effort, person-day range, risks, assumptions, hidden tasks, spike advice, and split recommendations.
+- A 13 always recommends splitting and supplies proposed stories.
+- Re-estimation with the same session_id must reuse the prior checkpoint.
+- Parse structured JSON defensively across provider envelopes, markdown fences, list echoes, and parsed/raw variants.
+
+LLM BOUNDARY
+
+- Provider/model strings must not appear outside backend/llm/factory.py.
+- Native providers use LangChain init_chat_model.
+- OpenAI-compatible providers share ChatOpenAI with base_url.
+- Groq uses JSON-mode structured output.
+- “mock” requires no API key and returns deterministic structured data based on a stable title hash.
+- API-key validation is provider-specific and belongs in validate_factory_config.
+- Startup configuration errors must not crash FastAPI. Report them from /health and return 503 from estimation routes.
+
+C4 DOMAIN AND UX
+
+- Persist projects, repository links, Jira links, C4 elements, relations, and artifact links in SQLite.
+- A child’s parent must be exactly one level above.
+- L1 maps to initiative, L2 to epic, L3 to story, and L4 to task.
+- Bugs may tag L3/L4. Tech debt and architecture flow may tag L2/L3.
+- Only L3 and L4 are directly estimable.
+- L1/L2 totals are deterministic sums, never LLM output.
+- Proposed elements do not enter roll-ups.
+- Element estimation injects parent chain, relations, technology, and code path as c4_context.
+- Hidden tasks seed proposed L4 children; split recommendations seed proposed sibling L3 stories.
+- Imports and replays are idempotent.
+- Use a React Flow canvas with persistent positions and labeled relations.
+- Click any L1-L4 node to select it and keep the C4 canvas open.
+- For L1, show an operating-plan summary inside the existing inspector sidebar, alongside description editing and Jira actions.
+- The L1 summary shows squads, people, monthly run-rate, approved budget, diagram count, work-package count, at-risk work, and allocated FTE.
+- Provide a “More details” button in the L1 summary that opens the full plan with that exact initiative selected.
+- Double-click L1-L3 to drill; breadcrumbs navigate back.
+
+L1 OPERATING PLAN
+
+Every L1 element owns one operating-plan scope. Create a dedicated “L1 plan” workspace tab. It opens from the navigation rail or the selected L1 node’s inspector-sidebar “More details” action.
+
+The header must:
+
+- Show the selected initiative name and description.
+- Switch among all project L1 initiatives.
+- Select a three-letter reporting currency, default USD.
+- Roll up squads, people, allocated FTE, monthly run-rate, approved budget, remaining budget, and at-risk work.
+
+DETAILED REQUIREMENTS, REVIEW, AND EXPORT
+
+Add a first-class Requirements tab to every L1 plan. Follow the ResearchArtifactViewer interaction model: document navigation and heading outline on the left, focused reader/editor in the center, and review/audit activity on the right where space permits. Match the existing Material 3 design system rather than importing Tailwind.
+
+Persist multiple normalized Markdown documents per L1:
+
+- id, project_id, l1_element_id, title, content, status, and integer version.
+- status: draft, in_review, or approved.
+- created_by, updated_by, approved_by, approved_at, created_at, and updated_at.
+- immutable version snapshots with title, content, changed_by, change_summary, and timestamp.
+- version-linked comments with parent_comment_id, author, open/approved/resolved status, acting user, and timestamps.
+- append-only audit events containing event type, actor, document version, JSON detail, and timestamp.
+
+Behavior:
+
+- Create any number of requirement documents from a useful starter.
+- Provide Edit, Split, and Preview modes plus a heading table of contents.
+- Render GitHub-flavored Markdown tables, lists, links, blockquotes, and code safely.
+- Detect fenced mermaid blocks, render them with securityLevel "strict", and provide Visual/Source/copy controls.
+- Insert a Mermaid starter at the current editor position; users can directly edit any Mermaid source.
+- Every save uses optimistic expected_version checking, creates a new immutable snapshot, and records an audit event.
+- Editing an approved document invalidates approval and returns it to draft.
+- Add comments; approve, resolve, or reopen comments; submit/approve/revoke document review.
+- Preserve all content, comment, review, and approval actions in the audit timeline.
+- Allow historical versions to be previewed and restored into the editor as a new change.
+- Capture a "Working as" actor label; production compliance deployments must source it from authenticated SSO/session identity.
+- Export only saved versions. Render Mermaid SVG in the browser, convert it to PNG, send it to the API, and embed it in generated DOCX/PPTX files.
+- Word contains structured headings/lists/content, rendered diagrams, editable Mermaid definitions, approval metadata, and review record.
+- PowerPoint uses a 16:9 deck with section slides, fitted rendered-diagram slides, version/status footers, and review comments.
+- Lazy-load the Requirements and Architecture tabs so Markdown/Mermaid do not inflate the initial application route.
+
+TRIBES, SQUADS, AND PEOPLE
+
+Persist normalized agile units:
+
+- id, project_id, l1_element_id, unit_type, optional parent_unit_id.
+- name, mission/work details, lead_name, capacity_fte, target_velocity, created_at.
+
+Rules:
+
+- A tribe cannot have a parent.
+- A squad may belong only to a tribe in the same L1 plan.
+- Deleting a unit cascades members and leaves work unassigned.
+
+Persist members:
+
+- id, unit_id, name, role, skills, location.
+- allocation_percent from 0 to 100.
+- monthly_cost >= 0 and created_at.
+
+Provide a default hierarchy view that nests squads under their tribe, plus a secondary card/grid view. Show mission, lead, capacity, velocity, people, skills, allocation, and allocated run-rate. Direct members on a tribe are optional and must be presented as tribe-level leadership/shared roles only; do not imply every tribe needs them. If no direct tribe members exist, hide the "Tribe leadership & shared roles" section but keep a clear "Add shared role" action on the tribe header. Delivery members should be added inside squads.
+
+WORK PLAN AND COST
+
+Persist work packages:
+
+- id, project_id, l1_element_id.
+- optional squad_id and optional linked_element_id.
+- title, description, start_date, end_date.
+- status: planned, in_progress, at_risk, or done.
+- allocation_percent, budget_cost, actual_cost, and created_at.
+
+Rules:
+
+- End cannot precede start.
+- Squad must belong to the same L1 plan.
+- Linked scope must be an L2-L4 descendant of the same L1.
+- Editing must allow squad and C4 links to be cleared.
+- Metrics are deterministic sums.
+
+Provide add/edit/delete, a compact delivery timeline, ownership, status, budget/actual/variance, risk highlighting, and reporting-currency formatting.
+
+ARCHITECTURE AND INFRASTRUCTURE
+
+Persist multiple diagrams per L1:
+
+- id, project_id, l1_element_id.
+- diagram_type: architecture or infrastructure.
+- title, mermaid_source, created_at, and updated_at.
+
+Provide:
+
+- Architecture and infrastructure starter templates.
+- Saved diagram list.
+- Mermaid source and live SVG preview side by side.
+- Debounced rendering with Mermaid securityLevel “strict”.
+- Clear syntax errors and disabled saving while invalid.
+- Saved/unsaved state, add/edit/delete, and SVG export.
+- Lazy loading so Mermaid does not inflate the initial bundle.
+
+L1 API
+
+- GET/PATCH /projects/{project_id}/l1/{l1_element_id}/plan
+- POST /projects/{project_id}/l1/{l1_element_id}/units
+- PATCH/DELETE /projects/{project_id}/l1/units/{unit_id}
+- POST /projects/{project_id}/l1/units/{unit_id}/members
+- PATCH/DELETE /projects/{project_id}/l1/members/{member_id}
+- POST /projects/{project_id}/l1/{l1_element_id}/work
+- PATCH/DELETE /projects/{project_id}/l1/work/{work_item_id}
+- POST /projects/{project_id}/l1/{l1_element_id}/diagrams
+- PATCH/DELETE /projects/{project_id}/l1/diagrams/{diagram_id}
+- GET/POST /projects/{project_id}/l1/{l1_element_id}/requirements
+- GET/PATCH /projects/{project_id}/l1/requirements/{document_id}
+- GET /projects/{project_id}/l1/requirements/{document_id}/versions/{version}
+- POST /projects/{project_id}/l1/requirements/{document_id}/comments
+- PATCH /projects/{project_id}/l1/requirements/comments/{comment_id}
+- POST /projects/{project_id}/l1/requirements/{document_id}/review
+- POST /projects/{project_id}/l1/requirements/{document_id}/export/{docx|pptx}
+
+Return complete plans with element, settings, units with members, joined work items, diagrams, and deterministic metrics.
+
+JIRA
+
+- Named instances come from JIRA_INSTANCES and JIRA_<NAME>_* variables.
+- Cloud uses REST v3 with Basic auth; Server/Data Center uses REST v2 with Bearer PAT.
+- Reads support project, status, sprint, pagination, and limits.
+- Writes require JIRA_WRITE_ENABLED=true, confirm=true, and explicit per-issue UI confirmation.
+
+SPREADSHEETS
+
+- Accept CSV, XLS, and XLSX up to 15 MB.
+- Detect headers and return preview plus fuzzy mapping suggestions.
+- Require Title mapping; other fields are optional and overridable.
+- Support batch SSE estimation and report skipped blank-title rows.
+- Provide a downloadable XLSX template.
+
+API AND ERRORS
+
+- Use { "error": { "code", "message", "details", "retryable" } }.
+- Estimation routes stream SSE.
+- node events contain progress only.
+- result is atomic and explanation-complete.
+- Batch failures do not discard successful items.
+- Frontend reads VITE_API_BASE_URL in web mode and window.storyPointer.apiBaseUrl in Electron mode; never expose secrets.
+
+RUNTIME AND PACKAGING
+
+- Keep web mode as first-class: FastAPI runs with uvicorn and Vite serves the React app.
+- Add Electron desktop mode using the same built React app.
+- In Electron dev, start Vite and Electron with one command; Electron starts the FastAPI backend through Python.
+- In packaged desktop mode, Electron should prefer a bundled PyInstaller backend executable.
+- Allow STORYPOINTER_EXTERNAL_API_URL so Electron can connect to an already-running backend instead of spawning one.
+- Store desktop SQLite data under Electron userData, not inside the read-only app bundle.
+- Support STORYPOINTER_ENV_FILE so desktop can use a user-editable backend.env outside the bundle.
+- Default the desktop backend.env template to LLM_PROVIDER=mock for offline first launch; users can edit it for real LLM/Jira credentials.
+- Electron must pass the chosen local API base URL to the renderer at runtime through a preload bridge.
+- Package scripts must support web build, Electron dev, backend bundling, Windows NSIS/portable EXE, and macOS DMG/zip.
+
+VISUAL AND ACCESSIBILITY
+
+- Professional Material 3 shell with app bar, navigation rail, responsive cards, chips, dialogs, banners, and accessible controls.
+- Google-blue seed with distinct L1-L4 colors.
+- Calm enterprise aesthetic suitable for regulated teams.
+- Desktop and mobile breakpoints, visible keyboard focus, reduced-motion support, and complete loading/empty/error states.
+
+PERSISTENCE AND SECURITY
+
+- Enable SQLite WAL and foreign keys.
+- Use short-lived transactional connections.
+- Normalize L1 data; do not store a plan as one JSON blob.
+- Use deliberate cascade and set-null behavior.
+- Validate project and L1 ownership for every reference.
+- Limit Mermaid source length.
+- Limit Markdown/comment/export payload sizes and reject invalid or oversized diagram image data.
+- Keep requirement versions and audit events append-only through the application API.
+
+TESTS AND ACCEPTANCE
+
+Backend tests cover project CRUD, C4 rules, roll-ups, graph routing, structured parsing, agile-unit hierarchy, member run-rate, work ownership/dates/cost/clearing, cross-initiative rejection, diagrams, currency, requirement version conflicts, comment/review audit events, approval invalidation, and DOCX/PPTX generation.
+
+Before completion:
+
+- Run pytest backend/tests -q.
+- Run npm test.
+- Run npm run build.
+- Browser-test single-click on a non-first L1 and confirm its summary appears in the sidebar without leaving the canvas.
+- Click “More details” and confirm the full plan opens with that exact L1 selected.
+- Browser-test L1 double-click drill-down.
+- Create a tribe, squad, member, work package, and Mermaid diagram; verify metrics and preview.
+- Create multiple requirement documents; edit Markdown and Mermaid; save a new version; comment, approve/resolve, submit, approve, and verify the audit trail.
+- Export Word and PowerPoint and verify each opens, contains the saved version, and includes rendered Mermaid visuals.
+- Remove temporary QA data.
+
+DOCUMENTATION MAINTENANCE
+
+- README.md must always contain current installation, commands, architecture, API surface, and numbered usage flow.
+- promptrecreateapp.txt must always be updated whenever architecture, behavior, dependencies, schema, APIs, user flow, or acceptance criteria change.
+- Keep AGENTS.md synchronized with important repository working rules.
+- Do not mark work complete while README.md or promptrecreateapp.txt is stale.
+
+DELIVERABLE
+
+Return a fully working repository. Do not leave placeholder handlers, TODO-only screens, fake persistence, or dead buttons. Preserve strict module boundaries and ensure every described feature is usable through the UI and API.

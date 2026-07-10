@@ -1,76 +1,96 @@
 {
-  "name": "karya",
-  "version": "0.1.0",
-  "description": "AI-powered living architecture workspace",
-  "author": "Karya",
-  "main": "electron/main.cjs",
+  "name": "story-pointer-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Evidence-led story-point estimation and L1 planning workspace.",
+  "author": "Story Pointer Contributors",
+  "main": "desktop/electron/main.cjs",
   "type": "module",
+  "workspaces": [
+    "frontend",
+    "desktop"
+  ],
   "scripts": {
-    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
-    "dev:web": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
-    "pack": "npm run build && electron-builder --dir",
-    "dist:win": "npm run build && electron-builder --win nsis --x64",
-    "preview": "vite preview",
-    "start": "electron ."
+    "api:dev": "node scripts/run-python.mjs -m uvicorn backend.api.main:app --reload --port 8000",
+    "api:seed:banking": "node scripts/run-python.mjs scripts/seed_banking.py",
+    "api:seed:demo": "node scripts/run-python.mjs scripts/seed_demo.py",
+    "api:seed:resources": "node scripts/run-python.mjs scripts/seed_resources.py",
+    "api:test": "node scripts/run-python.mjs -m pytest backend/tests -q",
+    "backend:bundle": "npm run desktop:backend:bundle",
+    "build": "npm run web:build",
+    "build:web": "npm run web:build",
+    "desktop:backend:bundle": "npm --workspace @storypointer/desktop run backend:bundle",
+    "desktop:build": "npm --workspace @storypointer/desktop run build",
+    "desktop:build:mac": "npm --workspace @storypointer/desktop run build:mac",
+    "desktop:build:win": "npm --workspace @storypointer/desktop run build:win",
+    "desktop:dev": "npm --workspace @storypointer/desktop run dev",
+    "desktop:icon": "npm --workspace @storypointer/desktop run icon",
+    "desktop:pack": "npm --workspace @storypointer/desktop run pack",
+    "desktop:prepare": "npm --workspace @storypointer/desktop run prepare-app",
+    "dev": "npm run web:dev",
+    "dev:all": "concurrently -k -n api,web -c green,cyan \"npm run api:dev\" \"npm run web:dev\"",
+    "dev:web": "npm run web:dev",
+    "electron:dev": "npm run desktop:dev",
+    "preview": "npm run web:preview",
+    "test": "npm run test:all",
+    "test:all": "npm run api:test && npm run web:test",
+    "test:web": "npm run web:test",
+    "web:build": "npm --workspace @storypointer/web run build",
+    "web:dev": "npm --workspace @storypointer/web run dev",
+    "web:preview": "npm --workspace @storypointer/web run preview",
+    "web:test": "npm --workspace @storypointer/web run test"
   },
-  "dependencies": {},
   "devDependencies": {
-    "@mermaid-js/mermaid-zenuml": "^0.2.3",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.0",
-    "electron": "^34.0.0",
-    "electron-builder": "^26.15.3",
-    "lucide-react": "^0.468.0",
-    "mermaid": "^11.16.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.1",
-    "wait-on": "^8.0.1"
+    "concurrently": "^10.0.3"
   },
   "build": {
-    "appId": "com.karya.desktop",
-    "productName": "Karya",
-    "asar": true,
-    "electronDist": "node_modules/electron/dist",
+    "appId": "com.storypointer.app",
+    "productName": "Story Pointer",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "desktop/electron/**/*",
       "package.json"
     ],
     "extraResources": [
       {
-        "from": "python",
-        "to": "python",
+        "from": "desktop/backend-dist",
+        "to": "backend",
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "desktop/backend.env.example",
+        "to": "backend.env.example"
       }
     ],
-    "win": {
+    "mac": {
+      "icon": "desktop/assets/icon.png",
+      "category": "public.app-category.productivity",
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "Karya-Setup-${version}.${ext}"
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "desktop/assets/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "nsis": {
+      "artifactName": "${productName}-${version}-${os}-${arch}-setup.${ext}",
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Karya",
-      "deleteAppDataOnUninstall": false
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${os}-${arch}-portable.${ext}"
     }
   }
 }
