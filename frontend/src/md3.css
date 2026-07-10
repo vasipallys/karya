@@ -232,6 +232,24 @@ body.dockable-resizing { cursor: col-resize; user-select: none; }
 .m3-tree-name span.label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m3-tree-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; padding: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .m3-tree-link:hover, .m3-tree-link:focus-visible { color: var(--m3-primary); text-decoration: underline; }
+
+/* ---- Cross-level breadcrumb navigation (L1–L4 workspaces) ---- */
+.level-nav { min-width: 0; }
+.level-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-top: 6px; }
+.level-crumb-step { display: inline-flex; align-items: center; gap: 2px; }
+.level-crumbs .crumb { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 3px 7px; border-radius: 7px; font: 500 12.5px 'Roboto'; color: var(--m3-on-surface-variant); cursor: pointer; max-width: 260px; }
+.level-crumbs .crumb:hover, .level-crumbs .crumb:focus-visible { background: var(--m3-surface-container-high); color: var(--m3-primary); }
+.level-crumbs .crumb.current { color: var(--m3-on-surface); font-weight: 600; cursor: default; }
+.level-crumbs .crumb.current:hover { background: none; color: var(--m3-on-surface); }
+.level-crumbs .crumb .m3-chip { height: 19px; padding: 0 7px; font-size: 10px; }
+.level-crumbs > .level-crumb-step > svg { color: var(--m3-outline); flex: none; }
+.level-drill { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.level-drill-label { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 500; letter-spacing: .05em; text-transform: uppercase; color: var(--m3-on-surface-variant); }
+.drill-chip { border: 0; cursor: pointer; height: 24px; padding: 0 11px; border-radius: 999px; font: 500 12px 'Roboto'; background: var(--m3-surface-container-high); color: var(--m3-on-surface-variant); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drill-chip:hover, .drill-chip:focus-visible { box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.drill-chip.level-L2 { background: var(--m3-l2-container); color: var(--m3-l2); }
+.drill-chip.level-L3 { background: var(--m3-l3-container); color: var(--m3-l3); }
+.drill-chip.level-L4 { background: var(--m3-l4-container); color: var(--m3-l4); }
 .m3-tree-points { font-weight: 700; }
 .m3-tree-flags { display: flex; gap: 4px; flex-wrap: wrap; }
 

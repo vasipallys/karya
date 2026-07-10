@@ -1,6 +1,8 @@
 import { CheckCircle2, CheckSquare, Circle, Code2, FileText, FlaskConical, GitBranch, ListChecks, Network, Pencil, PencilRuler, Plus, Sparkles, Square, Trash2 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
+import AiAssist from '../components/AiAssist'
+import LevelBreadcrumb from '../components/LevelBreadcrumb'
 import { MarkdownViewer } from '../components/MarkdownEditor'
 import MermaidView from '../components/MermaidView'
 import { useToast } from '../ui/Toast'
@@ -52,9 +54,10 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'failing', 'todo'].includes(v) ? 'sub-partiallyallocated' : ['low', 'passing', 'done'].includes(v) ? 'ok' : ''}`
 
-export default function L4Architecture({ projectId, requestedId, onOpenCanvas }) {
+export default function L4Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
+  const [allElements, setAllElements] = useState([])
   const [l4Id, setL4Id] = useState(requestedId || '')
   const [ws, setWs] = useState(null)
   const [tab, setTab] = useState('overview')
@@ -74,6 +77,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas })
     api.c4Graph(projectId).then((g) => {
       const l4s = g.elements.filter((e) => e.level === 'L4')
       setElements(l4s)
+      setAllElements(g.elements)
       setL4Id((cur) => cur && l4s.some((e) => e.id === cur) ? cur : (l4s[0]?.id || ''))
     }).catch(fail)
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -143,7 +147,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas })
         <span className="l1-hero-icon"><Code2 size={22} /></span>
         <div><span className="l1-eyebrow">L4 implementation detail</span>
           <select value={l4Id} onChange={(e) => setL4Id(e.target.value)} aria-label="Select L4 element">{elements.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
-          {ws?.parent && <p>Linked L3: {ws.parent.name}</p>}</div>
+          <LevelBreadcrumb elements={allElements} elementId={l4Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
         <button className="m3-btn tonal small" onClick={runAi} disabled={ai?.loading}><Sparkles size={15} /> {ai?.loading ? 'Drafting…' : 'AI generate L4'}</button>
@@ -158,7 +162,14 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas })
       </nav>
 
       {tab === 'overview' && <div className="l1arch-panel">
-        <div className="l1arch-section-head"><h3>Summary</h3></div>
+        <div className="l1arch-section-head"><h3>Summary</h3>
+          <AiAssist label="AI draft summary" busyLabel="Drafting…" emptyMessage="Add code units or a diagram first."
+            getSource={() => [
+              ws?.element?.name ? `L4 task: ${ws.element.name}` : '',
+              ws?.code_units?.length ? `Code units: ${ws.code_units.map((u) => u.name).join(', ')}` : '',
+              diagram.trim() ? `Mermaid class/sequence diagram:\n${diagram}` : '',
+            ].filter(Boolean).join('\n')}
+            onResult={setSummary} /></div>
         <textarea className="vision-field-summary" rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One-paragraph implementation summary" />
         <div className="l1arch-section-head"><h3>Implementation diagram <small>Mermaid class / sequence diagram</small></h3>
           <div className="l1arch-export-actions">

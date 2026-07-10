@@ -1,8 +1,11 @@
-import { BookOpen, BrainCircuit, ChevronDown, LogOut, Server, ShieldCheck } from 'lucide-react'
+import { BookOpen, BrainCircuit, ChevronDown, LogOut, Server, ShieldCheck, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
 import { useAuth } from './auth/AuthContext'
 import { ROLE_LABELS } from './auth/permissions'
+import AskAiDialog from './components/AskAiDialog'
+import { resolveAiDestination } from './components/askAiRouting'
+import { useToast } from './ui/Toast'
 import AdminConsole from './screens/AdminConsole'
 import Login from './screens/Login'
 import NewProjectWizard from './screens/NewProjectWizard'
@@ -44,10 +47,13 @@ function UserMenu() {
 
 export default function App() {
   const { user, can } = useAuth()
+  const toast = useToast()
   const [route, setRoute] = useState({ name: 'home' })
   const [config, setConfig] = useState(null)
   const [health, setHealth] = useState(null)
   const [error, setError] = useState(null)
+  const [askAi, setAskAi] = useState(false)
+  const [workspaceTab, setWorkspaceTab] = useState(null)
 
   // Land every freshly signed-in identity on Home (avoids showing a prior
   // session's route, e.g. an admin page, to a user who can't access it).
@@ -70,6 +76,19 @@ export default function App() {
 
   const go = (name) => setRoute({ name })
 
+  // Global "Ask AI": route the orchestrator's chosen action to its workspace.
+  const handleAiNavigate = (action) => {
+    const destination = resolveAiDestination(action, route.name === 'project')
+    if (destination.kind === 'tab') setWorkspaceTab({ id: destination.tab })
+    else if (destination.kind === 'admin') {
+      if (showAdmin) go('admin')
+      else toast.info('Reporting lives in the Admin area — ask an admin to run it.')
+    } else if (destination.kind === 'need-project') {
+      toast.info('Open a platform first, then ask again.')
+      go('home')
+    }
+  }
+
   return <div className="m3 app-shell">
     <header className="m3-topbar">
       <button className="m3-brand" onClick={() => go('home')} aria-label="Karya home">
@@ -79,7 +98,8 @@ export default function App() {
       <nav className="m3-topbar-nav">
         <button className={route.name === 'home' || route.name === 'project' || route.name === 'wizard' ? 'active' : ''} onClick={() => go('home')}>Platforms</button>
         {showAdmin && <button className={route.name === 'admin' ? 'active' : ''} onClick={() => go('admin')}><ShieldCheck size={14} /> Admin</button>}
-        <a className="m3-topbar-link" href="/help/guide.html" target="_blank" rel="noreferrer" title="Open the interactive user guide in a new tab"><BookOpen size={14} /> Guide</a>
+        <button onClick={() => setAskAi(true)} title="Route a request to the right AI agent"><Sparkles size={14} /> Ask AI</button>
+        <a className="m3-topbar-link" href="/help/guide.html?v=20260710" target="_blank" rel="noreferrer" title="Open the interactive user guide in a new tab"><BookOpen size={14} /> Guide</a>
       </nav>
       <div className="m3-topbar-status">
         <span className="m3-chip"><Server size={13} />{config ? (config.llm.provider ? `${config.llm.provider} · ${config.llm.model}` : 'LLM not configured') : 'Checking model…'}</span>
@@ -90,16 +110,16 @@ export default function App() {
     {route.name === 'project'
       ? <>
         {configurationError && <div className="m3-content" style={{ padding: '16px 28px 0' }}><div className="m3-banner error">{configurationError}</div></div>}
-        <ProjectWorkspace key={route.id} projectId={route.id} config={config} notice={route.notice} />
+        <ProjectWorkspace key={route.id} projectId={route.id} config={config} notice={route.notice} requestedTab={workspaceTab} />
       </>
       : <div className="m3-content" style={{ flex: 1 }}>
         {configurationError && <div className="m3-banner error">{configurationError}</div>}
         {route.name === 'home' && <ProjectsHome
           canCreate={can('platform.create')}
-          onOpen={(id) => setRoute({ name: 'project', id })}
+          onOpen={(id) => { setWorkspaceTab(null); setRoute({ name: 'project', id }) }}
           onNew={() => setRoute({ name: 'wizard' })} />}
         {route.name === 'wizard' && <NewProjectWizard config={config}
-          onDone={(id, notice) => setRoute({ name: 'project', id, notice })}
+          onDone={(id, notice) => { setWorkspaceTab(null); setRoute({ name: 'project', id, notice }) }}
           onCancel={() => setRoute({ name: 'home' })} />}
         {route.name === 'quick' && <>
           <div className="m3-page-title"><h1>Quick estimate</h1><p>One-off estimation without a platform — form, Jira browse, or spreadsheet.</p></div>
@@ -107,5 +127,6 @@ export default function App() {
         </>}
         {route.name === 'admin' && (showAdmin ? <AdminConsole /> : <div className="m3-banner error">You don't have access to the admin area.</div>)}
       </div>}
+    {askAi && <AskAiDialog onClose={() => setAskAi(false)} onNavigate={handleAiNavigate} />}
   </div>
 }

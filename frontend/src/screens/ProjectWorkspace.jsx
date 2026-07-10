@@ -106,7 +106,7 @@ function Overview({ project, config, onChanged }) {
   </div>
 }
 
-export default function ProjectWorkspace({ projectId, config, notice }) {
+export default function ProjectWorkspace({ projectId, config, notice, requestedTab }) {
   const [tab, setTab] = useState('canvas')
   const [planningL1Id, setPlanningL1Id] = useState(null)
   const [l2Target, setL2Target] = useState(null)
@@ -118,6 +118,10 @@ export default function ProjectWorkspace({ projectId, config, notice }) {
 
   const refresh = useCallback(() => api.getProject(projectId).then(setProject).catch(setError), [projectId])
   useEffect(() => { refresh() }, [refresh])
+
+  // Global Ask-AI (and other shell-level) tab requests; token object so
+  // repeated identical requests still retrigger.
+  useEffect(() => { if (requestedTab?.id) setTab(requestedTab.id) }, [requestedTab])
 
   // Deep-link a roll-up row to the workspace that owns that element's level.
   const openElement = useCallback((element) => {
@@ -153,10 +157,10 @@ export default function ProjectWorkspace({ projectId, config, notice }) {
       {tab === 'canvas' && <C4Canvas projectId={projectId} config={config}
         onOpenL1Plan={(elementId) => { setPlanningL1Id(elementId); setTab('planning') }} />}
       {tab === 'planning' && <L1Planning projectId={projectId} requestedL1Id={planningL1Id}
-        onL1Change={setPlanningL1Id} onOpenCanvas={() => setTab('canvas')} />}
-      {tab === 'l2arch' && <Suspense fallback={<p className="l1-loading">Loading L2 workspace…</p>}><L2Architecture projectId={projectId} requestedId={l2Target} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
-      {tab === 'l3arch' && <Suspense fallback={<p className="l1-loading">Loading L3 workspace…</p>}><L3Architecture projectId={projectId} requestedId={l3Target} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
-      {tab === 'l4arch' && <Suspense fallback={<p className="l1-loading">Loading L4 workspace…</p>}><L4Architecture projectId={projectId} requestedId={l4Target} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
+        onL1Change={setPlanningL1Id} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} />}
+      {tab === 'l2arch' && <Suspense fallback={<p className="l1-loading">Loading L2 workspace…</p>}><L2Architecture projectId={projectId} requestedId={l2Target} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
+      {tab === 'l3arch' && <Suspense fallback={<p className="l1-loading">Loading L3 workspace…</p>}><L3Architecture projectId={projectId} requestedId={l3Target} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
+      {tab === 'l4arch' && <Suspense fallback={<p className="l1-loading">Loading L4 workspace…</p>}><L4Architecture projectId={projectId} requestedId={l4Target} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
       {tab === 'rollup' && <RollupDashboard projectId={projectId} onNavigate={openElement} />}
       {tab === 'quick' && <QuickEstimate config={config} />}
       {tab === 'overview' && <Overview project={project} config={config} onChanged={refresh} />}

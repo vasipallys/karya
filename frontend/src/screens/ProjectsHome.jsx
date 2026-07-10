@@ -112,7 +112,7 @@ export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
           <p>Each platform is led by one or more leads and modelled as an interactive C4 model you estimate straight from the architecture.</p>
         </div>
         <div className="l1-heading-actions">
-          <a className="m3-btn tonal" href="/help/guide.html" target="_blank" rel="noreferrer" title="Open the interactive user guide in a new tab"><BookOpen size={16} /> Guide</a>
+          <a className="m3-btn tonal" href="/help/guide.html?v=20260710" target="_blank" rel="noreferrer" title="Open the interactive user guide in a new tab"><BookOpen size={16} /> Guide</a>
         </div>
       </header>
 

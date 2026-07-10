@@ -1,6 +1,7 @@
 import { Blocks, CalendarRange, CircleAlert, FileText, Landmark, PanelTopClose, PanelTopOpen, RefreshCw, ShieldCheck, UsersRound, WalletCards } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
+import LevelBreadcrumb from '../components/LevelBreadcrumb'
 import TeamPlanning from './TeamPlanning'
 import WorkCostPlanning from './WorkCostPlanning'
 
@@ -17,7 +18,7 @@ const SECTIONS = [
 ]
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'AUD', 'CAD', 'JPY', 'SGD']
 
-export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpenCanvas }) {
+export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpenCanvas, onOpenElement }) {
   const [graph, setGraph] = useState({ elements: [], relations: [] })
   const [l1Id, setL1Id] = useState(requestedL1Id || '')
   const [plan, setPlan] = useState(null)
@@ -70,7 +71,7 @@ export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpe
     <header className={`l1-plan-hero${headerOpen ? '' : ' collapsed'}`}>
       <div className="l1-plan-identity">
         <span className="l1-hero-icon"><Landmark size={22} /></span>
-        <div><span className="l1-eyebrow">L1 operating plan</span><select value={l1Id} onChange={(event) => setL1Id(event.target.value)} aria-label="Select L1 initiative">{initiatives.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{headerOpen && <p>{plan?.element.description || 'Align organization, investment, delivery, and technology around this initiative.'}</p>}</div>
+        <div><span className="l1-eyebrow">L1 operating plan</span><select value={l1Id} onChange={(event) => setL1Id(event.target.value)} aria-label="Select L1 initiative">{initiatives.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{headerOpen && <p>{plan?.element.description || 'Align organization, investment, delivery, and technology around this initiative.'}</p>}{headerOpen && <LevelBreadcrumb elements={graph.elements} elementId={l1Id} onNavigate={onOpenElement} />}</div>
       </div>
       <div className="l1-plan-tools">
         <label><span>Reporting currency</span><select value={currency} onChange={(event) => changeCurrency(event.target.value)}>{CURRENCIES.map((item) => <option key={item}>{item}</option>)}</select></label>

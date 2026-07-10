@@ -1,6 +1,8 @@
 import { Boxes, CheckCircle2, Circle, DownloadCloud, FileText, Gavel, GitBranch, Grid3x3, Network, Pencil, PencilRuler, Plug, Plus, RefreshCw, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
+import AiAssist from '../components/AiAssist'
+import LevelBreadcrumb from '../components/LevelBreadcrumb'
 import { MarkdownViewer } from '../components/MarkdownEditor'
 import MermaidView from '../components/MermaidView'
 import { useToast } from '../ui/Toast'
@@ -89,9 +91,10 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'at_risk', 'blocked', 'restricted'].includes(v) ? 'sub-partiallyallocated' : ['low', 'done', 'met', 'active', 'public'].includes(v) ? 'ok' : ''}`
 
-export default function L2Architecture({ projectId, requestedId, onOpenCanvas }) {
+export default function L2Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
+  const [allElements, setAllElements] = useState([])
   const [l2Id, setL2Id] = useState(requestedId || '')
   const [ws, setWs] = useState(null)
   const [tab, setTab] = useState('overview')
@@ -112,6 +115,7 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas })
     api.c4Graph(projectId).then((g) => {
       const l2s = g.elements.filter((e) => e.level === 'L2')
       setElements(l2s)
+      setAllElements(g.elements)
       setL2Id((cur) => cur && l2s.some((e) => e.id === cur) ? cur : (l2s[0]?.id || ''))
     }).catch(fail)
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -196,7 +200,7 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas })
         <span className="l1-hero-icon"><Network size={22} /></span>
         <div><span className="l1-eyebrow">L2 container architecture</span>
           <select value={l2Id} onChange={(e) => setL2Id(e.target.value)} aria-label="Select L2 element">{elements.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
-          {ws?.parent && <p>Linked L1: {ws.parent.name}</p>}</div>
+          <LevelBreadcrumb elements={allElements} elementId={l2Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
         <button className="m3-btn tonal small" onClick={runAi} disabled={ai?.loading}><Sparkles size={15} /> {ai?.loading ? 'Drafting…' : 'AI generate L2'}</button>
@@ -212,7 +216,15 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas })
       </nav>
 
       {tab === 'overview' && <div className="l1arch-panel">
-        <div className="l1arch-section-head"><h3>Summary</h3></div>
+        <div className="l1arch-section-head"><h3>Summary</h3>
+          <AiAssist label="AI draft summary" busyLabel="Drafting…" emptyMessage="Add containers, APIs, or a diagram first."
+            getSource={() => [
+              ws?.element?.name ? `L2 container: ${ws.element.name}` : '',
+              ws?.containers?.length ? `Containers: ${ws.containers.map((c) => c.name).join(', ')}` : '',
+              ws?.apis?.length ? `APIs: ${ws.apis.map((a) => a.name).join(', ')}` : '',
+              diagram.trim() ? `Mermaid container diagram:\n${diagram}` : '',
+            ].filter(Boolean).join('\n')}
+            onResult={setSummary} /></div>
         <textarea className="vision-field-summary" rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One-paragraph L2 architecture summary" />
         <div className="l1arch-section-head"><h3>C4 container diagram <small>Mermaid — portable & reviewable</small></h3>
           <div className="l1arch-export-actions">

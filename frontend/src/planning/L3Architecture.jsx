@@ -1,6 +1,8 @@
 import { Boxes, CheckCircle2, Circle, FileText, Gavel, GitBranch, Grid3x3, Layers, Network, Pencil, PencilRuler, Plug, Puzzle, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
+import AiAssist from '../components/AiAssist'
+import LevelBreadcrumb from '../components/LevelBreadcrumb'
 import { MarkdownViewer } from '../components/MarkdownEditor'
 import MermaidView from '../components/MermaidView'
 import { useToast } from '../ui/Toast'
@@ -80,9 +82,10 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'gap', 'restricted'].includes(v) ? 'sub-partiallyallocated' : ['low', 'implemented', 'active', 'provided'].includes(v) ? 'ok' : ''}`
 
-export default function L3Architecture({ projectId, requestedId, onOpenCanvas }) {
+export default function L3Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
+  const [allElements, setAllElements] = useState([])
   const [l3Id, setL3Id] = useState(requestedId || '')
   const [ws, setWs] = useState(null)
   const [tab, setTab] = useState('overview')
@@ -102,6 +105,7 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas })
     api.c4Graph(projectId).then((g) => {
       const l3s = g.elements.filter((e) => e.level === 'L3')
       setElements(l3s)
+      setAllElements(g.elements)
       setL3Id((cur) => cur && l3s.some((e) => e.id === cur) ? cur : (l3s[0]?.id || ''))
     }).catch(fail)
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -178,7 +182,7 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas })
         <span className="l1-hero-icon"><Puzzle size={22} /></span>
         <div><span className="l1-eyebrow">L3 component architecture</span>
           <select value={l3Id} onChange={(e) => setL3Id(e.target.value)} aria-label="Select L3 element">{elements.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
-          {ws?.parent && <p>Linked L2: {ws.parent.name}</p>}</div>
+          <LevelBreadcrumb elements={allElements} elementId={l3Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
         <button className="m3-btn tonal small" onClick={runAi} disabled={ai?.loading}><Sparkles size={15} /> {ai?.loading ? 'Drafting…' : 'AI generate L3'}</button>
@@ -193,7 +197,15 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas })
       </nav>
 
       {tab === 'overview' && <div className="l1arch-panel">
-        <div className="l1arch-section-head"><h3>Summary</h3></div>
+        <div className="l1arch-section-head"><h3>Summary</h3>
+          <AiAssist label="AI draft summary" busyLabel="Drafting…" emptyMessage="Add components, interfaces, or a diagram first."
+            getSource={() => [
+              ws?.element?.name ? `L3 component: ${ws.element.name}` : '',
+              ws?.components?.length ? `Components: ${ws.components.map((c) => c.name).join(', ')}` : '',
+              ws?.interfaces?.length ? `Interfaces: ${ws.interfaces.map((i) => i.name).join(', ')}` : '',
+              diagram.trim() ? `Mermaid component diagram:\n${diagram}` : '',
+            ].filter(Boolean).join('\n')}
+            onResult={setSummary} /></div>
         <textarea className="vision-field-summary" rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One-paragraph L3 component summary" />
         <div className="l1arch-section-head"><h3>Component diagram <small>Mermaid — portable & reviewable</small></h3>
           <div className="l1arch-export-actions">

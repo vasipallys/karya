@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Circle, Download, FileText, Gavel, Landmark, Link2, MessageSquare, Pencil, Plus, ShieldAlert, Sparkles, Target, ThumbsDown, ThumbsUp, Trash2, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
+import AiAssist from '../components/AiAssist'
 import MarkdownEditor, { MarkdownViewer, renderMermaidImages } from '../components/MarkdownEditor'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
@@ -128,17 +129,6 @@ export default function L1Architecture({ projectId, l1Id, setError }) {
     catch (err) { fail(err) } finally { setBusy(false) }
   }
 
-  // Generate a concise summary of a field's "more details" into the parent field.
-  const summarizeField = async (fieldKey, detailKey, style, current) => {
-    const details = (current[detailKey] || '').trim()
-    if (!details) { toast.info('Add some details first, then summarize.'); return }
-    try {
-      const { summary } = await api.aiSummarize(details, style)
-      setVision({ ...current, [fieldKey]: summary })
-      toast.success('Summary generated — review and save')
-    } catch (err) { fail(err) }
-  }
-
   const openDialog = (entity, editing = null) => setDialog({
     entity, editing, draft: editing ? { ...DEFAULTS[entity], ...editing } : { ...DEFAULTS[entity] },
   })
@@ -255,11 +245,11 @@ export default function L1Architecture({ projectId, l1Id, setError }) {
       <div className="l1arch-section-head"><h3>Vision</h3>
         <button className="m3-btn filled small" onClick={saveVision} disabled={busy || !vision}>Save vision</button></div>
       <VisionField label="Vision statement" fieldKey="vision_statement" detailKey="vision_statement_details" style="vision" rows={3}
-        value={v} onChange={setVision} onSummarize={summarizeField} />
+        value={v} onChange={setVision} />
       <VisionField label="Business problem" fieldKey="business_problem" detailKey="business_problem_details" style="problem" rows={2}
-        value={v} onChange={setVision} onSummarize={summarizeField} />
+        value={v} onChange={setVision} />
       <VisionField label="Target users" fieldKey="target_users" detailKey="target_users_details" style="users" rows={2}
-        value={v} onChange={setVision} onSummarize={summarizeField} />
+        value={v} onChange={setVision} />
       <label className="m3-field"><span>Status</span><select value={v.status} onChange={(e) => setVision({ ...v, status: e.target.value })}>{['draft', 'approved', 'baselined', 'archived'].map((s) => <option key={s}>{s}</option>)}</select></label>
 
       <div className="l1arch-section-head"><h3>Objectives & Key Results</h3><button className="m3-btn tonal small" onClick={() => openDialog('okr')}><Plus size={14} /> Add OKR</button></div>
@@ -450,14 +440,15 @@ function GovernancePanel({ approvals, readiness, impact, onSubmit, onDecide }) {
   </div>
 }
 
-function VisionField({ label, fieldKey, detailKey, style, rows, value, onChange, onSummarize }) {
+function VisionField({ label, fieldKey, detailKey, style, rows, value, onChange }) {
   const [open, setOpen] = useState(false)
   return <div className="vision-field">
     <div className="vision-field-head">
       <span>{label}</span>
       <div className="vision-field-actions">
         <button type="button" className="m3-btn text small" onClick={() => setOpen((o) => !o)}>{open ? 'Hide details' : 'More details'}</button>
-        <button type="button" className="m3-btn tonal small" onClick={() => onSummarize(fieldKey, detailKey, style, value)}><Sparkles size={13} /> AI summarize → field</button>
+        <AiAssist getSource={() => value[detailKey] || ''} field={style}
+          onResult={(summary) => onChange({ ...value, [fieldKey]: summary })} />
       </div>
     </div>
     <textarea className="vision-field-summary" rows={rows} value={value[fieldKey] || ''} placeholder={`Concise ${label.toLowerCase()} (or generate from details)`} onChange={(e) => onChange({ ...value, [fieldKey]: e.target.value })} />
