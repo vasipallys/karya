@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ENV_FILE = Path(os.getenv("STORYPOINTER_ENV_FILE", Path(__file__).with_name(".env"))).expanduser()
+ENV_FILE = Path(os.getenv("KARYA_ENV_FILE", Path(__file__).with_name(".env"))).expanduser()
 load_dotenv(ENV_FILE)
 
 

@@ -4,7 +4,7 @@ Status: implemented (2026-07-05) — all four phases landed in one pass; this do
 
 ## Idea in one paragraph
 
-Story Pointer today estimates one story (or a batch) with no memory of the project it belongs to. This design turns it into a **project workspace**: a user creates or opens a project, links it to a code repo and a Jira project, and builds (or imports) a **C4 model** of the system in an interactive canvas. Every C4 element maps to an Agile artifact per the standard ladder — L1 System context → Theme/Initiative, L2 Container → Epic, L3 Component → Story/Feature, L4 Code → Task/Sub-task/PR — and the existing LangGraph estimation pipeline runs on the L3/L4 leaves with architecture context injected as evidence. Points roll up the tree so an epic and an initiative always show a justified aggregate. The UI moves to a Material Design 3 ("Google") theme.
+Karya today estimates one story (or a batch) with no memory of the project it belongs to. This design turns it into a **project workspace**: a user creates or opens a project, links it to a code repo and a Jira project, and builds (or imports) a **C4 model** of the system in an interactive canvas. Every C4 element maps to an Agile artifact per the standard ladder — L1 System context → Theme/Initiative, L2 Container → Epic, L3 Component → Story/Feature, L4 Code → Task/Sub-task/PR — and the existing LangGraph estimation pipeline runs on the L3/L4 leaves with architecture context injected as evidence. Points roll up the tree so an epic and an initiative always show a justified aggregate. The UI moves to a Material Design 3 ("Google") theme.
 
 ## C4 ↔ Agile artifact mapping
 

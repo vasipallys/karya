@@ -159,7 +159,7 @@ export default function RequirementsPlanning({ projectId, l1Id, setError }) {
   const [newTitle, setNewTitle] = useState('')
   const [changeSummary, setChangeSummary] = useState('')
   const [viewVersion, setViewVersion] = useState(null)
-  const [actor, setActor] = useState(() => localStorage.getItem('storypointer.requirements.actor') || 'Plan contributor')
+  const [actor, setActor] = useState(() => localStorage.getItem('karya.requirements.actor') || 'Plan contributor')
   const [mermaidDialog, setMermaidDialog] = useState(null) // null | 'choose' | 'ai'
   const [mermaidPrompt, setMermaidPrompt] = useState('')
   const [mermaidType, setMermaidType] = useState('architecture')
@@ -193,7 +193,7 @@ export default function RequirementsPlanning({ projectId, l1Id, setError }) {
   useEffect(() => { loadDocument().catch(setError) }, [loadDocument, setError])
   useEffect(() => {
     const normalized = actor.trim() || 'Plan contributor'
-    localStorage.setItem('storypointer.requirements.actor', normalized)
+    localStorage.setItem('karya.requirements.actor', normalized)
   }, [actor])
 
   const dirty = !!(document && draft && (document.title !== draft.title || document.content !== draft.content))

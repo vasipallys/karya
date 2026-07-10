@@ -573,10 +573,10 @@ _initialized: set[str] = set()
 
 
 def db_path() -> Path:
-    configured = os.getenv("STORYPOINTER_DB")
+    configured = os.getenv("KARYA_DB")
     if configured:
         return Path(configured)
-    return Path(__file__).resolve().parents[2] / "data" / "storypointer.db"
+    return Path(__file__).resolve().parents[2] / "data" / "karya.db"
 
 
 def checkpoint_path() -> Path:

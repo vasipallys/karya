@@ -1,1 +1,1 @@
-"""Story Pointer backend package."""
+"""Karya backend package."""

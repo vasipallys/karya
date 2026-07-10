@@ -1,6 +1,6 @@
-# Story Pointer — User Guide
+# Karya — User Guide
 
-A step-by-step guide to using Story Pointer: modelling your system as a C4
+A step-by-step guide to using Karya: modelling your system as a C4
 architecture, estimating work with an evidence-led AI pipeline, planning
 delivery, driving governance, and using the workflow guide and assistant to move
 faster. For install/architecture details see the [README](../README.md); for the
@@ -35,7 +35,7 @@ internal design map see [CLAUDE.md](../CLAUDE.md).
 
 ## 1. Core concepts
 
-**Story Pointer** turns your architecture into the source of truth for estimation
+**Karya** turns your architecture into the source of truth for estimation
 and planning. You model a system as an interactive **C4 model** and the tool
 estimates the work, rolls the points up, and helps you plan and govern delivery.
 
@@ -103,7 +103,7 @@ npm run api:seed:banking    # richer multi-level banking sample
 
 ## 3. Signing in, roles & permissions
 
-Story Pointer uses **local demo auth** — no passwords or tokens. Application
+Karya uses **local demo auth** — no passwords or tokens. Application
 users *are* people in the **Resource directory**; each is assigned a role.
 
 **First run:** the earliest-created person in the directory is automatically

@@ -1,4 +1,4 @@
-import { FolderGit2, Plus, Sparkles, Trash2, Zap } from 'lucide-react'
+import { BookOpen, FolderGit2, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 
@@ -89,7 +89,7 @@ function ProjectCard({ project, onOpen, onDelete }) {
   )
 }
 
-export default function ProjectsHome({ onOpen, onNew, onQuick, canCreate = true }) {
+export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
   const [projects, setProjects] = useState(null)
   const [error, setError] = useState(null)
 
@@ -111,7 +111,9 @@ export default function ProjectsHome({ onOpen, onNew, onQuick, canCreate = true 
           <h1>Platforms</h1>
           <p>Each platform is led by one or more leads and modelled as an interactive C4 model you estimate straight from the architecture.</p>
         </div>
-        <button className="m3-btn tonal" onClick={onQuick}><Zap size={16} /> Quick estimate</button>
+        <div className="l1-heading-actions">
+          <a className="m3-btn tonal" href="/help/guide.html" target="_blank" rel="noreferrer" title="Open the interactive user guide in a new tab"><BookOpen size={16} /> Guide</a>
+        </div>
       </header>
 
       {error && <div className="m3-banner error">{String(error.message || error)}</div>}
@@ -120,10 +122,9 @@ export default function ProjectsHome({ onOpen, onNew, onQuick, canCreate = true 
         <div className="proj-empty">
           <span className="proj-empty-icon"><Sparkles size={28} /></span>
           <h2>Start your first platform</h2>
-          <p>Create a platform, name its leads, and model your system as C4 to estimate from the architecture — or run a one-off Quick estimate for a single story.</p>
+          <p>Create a platform, name its leads, and model your system as C4 to estimate from the architecture.</p>
           <div className="proj-empty-actions">
             {canCreate && <button className="m3-btn filled" onClick={onNew}><Plus size={16} /> New platform</button>}
-            <button className="m3-btn text" onClick={onQuick}><Zap size={16} /> Quick estimate</button>
           </div>
         </div>
       )}

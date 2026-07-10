@@ -80,10 +80,10 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'gap', 'restricted'].includes(v) ? 'sub-partiallyallocated' : ['low', 'implemented', 'active', 'provided'].includes(v) ? 'ok' : ''}`
 
-export default function L3Architecture({ projectId, onOpenCanvas }) {
+export default function L3Architecture({ projectId, requestedId, onOpenCanvas }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
-  const [l3Id, setL3Id] = useState('')
+  const [l3Id, setL3Id] = useState(requestedId || '')
   const [ws, setWs] = useState(null)
   const [tab, setTab] = useState('overview')
   const [dialog, setDialog] = useState(null)
@@ -113,6 +113,7 @@ export default function L3Architecture({ projectId, onOpenCanvas }) {
     }).catch(fail)
   }, [projectId, l3Id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setWs(null); load() }, [load])
+  useEffect(() => { if (requestedId) setL3Id(requestedId) }, [requestedId])
 
   const saveArch = async (patch) => {
     setBusy(true)

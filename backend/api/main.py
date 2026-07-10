@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title="Story Pointer API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Karya API", version="2.0.0", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -217,7 +217,7 @@ async def upload_template() -> Response:
     return Response(
         template_workbook(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="story-pointer-template.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="karya-template.xlsx"'},
     )
 
 

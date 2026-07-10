@@ -1,8 +1,8 @@
 {
-  "name": "@storypointer/web",
+  "name": "@karya/web",
   "private": true,
   "version": "1.0.0",
-  "description": "React/Vite web client for Story Pointer.",
+  "description": "React/Vite web client for Karya.",
   "type": "module",
   "scripts": {
     "build": "vite build --config vite.config.js",

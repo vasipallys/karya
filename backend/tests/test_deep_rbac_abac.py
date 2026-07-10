@@ -12,13 +12,13 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def work_dir():
-    path = Path(tempfile.mkdtemp(prefix="storypointer-deep-rbac-test-"))
+    path = Path(tempfile.mkdtemp(prefix="karya-deep-rbac-test-"))
     yield path
     shutil.rmtree(path, ignore_errors=True)
 
 
 def _make_client(work_dir, monkeypatch, provider="mock"):
-    monkeypatch.setenv("STORYPOINTER_DB", str(work_dir / "test.db"))
+    monkeypatch.setenv("KARYA_DB", str(work_dir / "test.db"))
     monkeypatch.setenv("LLM_PROVIDER", provider)
     if provider == "openai":
         monkeypatch.delenv("LLM_API_KEY", raising=False)

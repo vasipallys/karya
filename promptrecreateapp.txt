@@ -1,11 +1,11 @@
 RECREATE APPLICATION PROMPT — STORY POINTER
 Last updated: 2026-07-06
 
-Build a complete, production-ready application named “Story Pointer”. Do not create a mockup or partial prototype. Implement the backend, frontend, persistence, streaming workflow, tests, setup files, sample-data scripts, README usage flow, and this recreation prompt.
+Build a complete, production-ready application named “Karya”. Do not create a mockup or partial prototype. Implement the backend, frontend, persistence, streaming workflow, tests, setup files, sample-data scripts, README usage flow, and this recreation prompt.
 
 PRODUCT PURPOSE
 
-Story Pointer is an evidence-led story-point estimator and project-planning workspace for React/Spring teams. It combines:
+Karya is an evidence-led story-point estimator and project-planning workspace for React/Spring teams. It combines:
 
 1. A checkpointed AI estimation pipeline that produces modified-Fibonacci points: 1, 2, 3, 5, 8, or 13.
 2. A persistent interactive C4 workspace:
@@ -256,7 +256,7 @@ API AND ERRORS
 - node events contain progress only.
 - result is atomic and explanation-complete.
 - Batch failures do not discard successful items.
-- Frontend reads VITE_API_BASE_URL in web mode and window.storyPointer.apiBaseUrl in Electron mode; never expose secrets.
+- Frontend reads VITE_API_BASE_URL in web mode and window.karya.apiBaseUrl in Electron mode; never expose secrets.
 
 RUNTIME AND PACKAGING
 
@@ -264,9 +264,9 @@ RUNTIME AND PACKAGING
 - Add Electron desktop mode using the same built React app.
 - In Electron dev, start Vite and Electron with one command; Electron starts the FastAPI backend through Python.
 - In packaged desktop mode, Electron should prefer a bundled PyInstaller backend executable.
-- Allow STORYPOINTER_EXTERNAL_API_URL so Electron can connect to an already-running backend instead of spawning one.
+- Allow KARYA_EXTERNAL_API_URL so Electron can connect to an already-running backend instead of spawning one.
 - Store desktop SQLite data under Electron userData, not inside the read-only app bundle.
-- Support STORYPOINTER_ENV_FILE so desktop can use a user-editable backend.env outside the bundle.
+- Support KARYA_ENV_FILE so desktop can use a user-editable backend.env outside the bundle.
 - Default the desktop backend.env template to LLM_PROVIDER=mock for offline first launch; users can edit it for real LLM/Jira credentials.
 - Electron must pass the chosen local API base URL to the renderer at runtime through a preload bridge.
 - Package scripts must support web build, Electron dev, backend bundling, Windows NSIS/portable EXE, and macOS DMG/zip.

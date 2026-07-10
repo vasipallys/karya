@@ -1,9 +1,9 @@
 {
-  "name": "story-pointer-monorepo",
+  "name": "karya-monorepo",
   "private": true,
   "version": "1.0.0",
   "description": "Evidence-led story-point estimation and L1 planning workspace.",
-  "author": "Story Pointer Contributors",
+  "author": "Karya Contributors",
   "main": "desktop/electron/main.cjs",
   "type": "module",
   "workspaces": [
@@ -19,14 +19,14 @@
     "backend:bundle": "npm run desktop:backend:bundle",
     "build": "npm run web:build",
     "build:web": "npm run web:build",
-    "desktop:backend:bundle": "npm --workspace @storypointer/desktop run backend:bundle",
-    "desktop:build": "npm --workspace @storypointer/desktop run build",
-    "desktop:build:mac": "npm --workspace @storypointer/desktop run build:mac",
-    "desktop:build:win": "npm --workspace @storypointer/desktop run build:win",
-    "desktop:dev": "npm --workspace @storypointer/desktop run dev",
-    "desktop:icon": "npm --workspace @storypointer/desktop run icon",
-    "desktop:pack": "npm --workspace @storypointer/desktop run pack",
-    "desktop:prepare": "npm --workspace @storypointer/desktop run prepare-app",
+    "desktop:backend:bundle": "npm --workspace @karya/desktop run backend:bundle",
+    "desktop:build": "npm --workspace @karya/desktop run build",
+    "desktop:build:mac": "npm --workspace @karya/desktop run build:mac",
+    "desktop:build:win": "npm --workspace @karya/desktop run build:win",
+    "desktop:dev": "npm --workspace @karya/desktop run dev",
+    "desktop:icon": "npm --workspace @karya/desktop run icon",
+    "desktop:pack": "npm --workspace @karya/desktop run pack",
+    "desktop:prepare": "npm --workspace @karya/desktop run prepare-app",
     "dev": "npm run web:dev",
     "dev:all": "concurrently -k -n api,web -c green,cyan \"npm run api:dev\" \"npm run web:dev\"",
     "dev:web": "npm run web:dev",
@@ -35,17 +35,17 @@
     "test": "npm run test:all",
     "test:all": "npm run api:test && npm run web:test",
     "test:web": "npm run web:test",
-    "web:build": "npm --workspace @storypointer/web run build",
-    "web:dev": "npm --workspace @storypointer/web run dev",
-    "web:preview": "npm --workspace @storypointer/web run preview",
-    "web:test": "npm --workspace @storypointer/web run test"
+    "web:build": "npm --workspace @karya/web run build",
+    "web:dev": "npm --workspace @karya/web run dev",
+    "web:preview": "npm --workspace @karya/web run preview",
+    "web:test": "npm --workspace @karya/web run test"
   },
   "devDependencies": {
     "concurrently": "^10.0.3"
   },
   "build": {
-    "appId": "com.storypointer.app",
-    "productName": "Story Pointer",
+    "appId": "com.karya.app",
+    "productName": "Karya",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"

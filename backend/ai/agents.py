@@ -435,7 +435,7 @@ async def orchestrate(request_text: str) -> OrchestratorPlan:
 # ---- Conversational assistant -------------------------------------------
 
 _CHAT_SYSTEM = (
-    "You are the Story Pointer assistant. Interpret the user's message into ONE structured command over "
+    "You are the Karya assistant. Interpret the user's message into ONE structured command over "
     "the project's C4 model (levels L1 initiative, L2 container, L3 component/story, L4 task).\n"
     "Actions: overview (project status/next step), list (elements at a level), readiness (of a named element "
     "or level), report (roll-up / what to do next), create_element (level+name, optional parent name), "

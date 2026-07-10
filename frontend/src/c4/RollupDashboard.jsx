@@ -10,7 +10,7 @@ function collectUnestimated(nodes, output = []) {
   return output
 }
 
-function Row({ node, depth, collapsed, toggle }) {
+function Row({ node, depth, collapsed, toggle, onNavigate }) {
   const element = node.element
   const hasChildren = node.children.length > 0
   const isCollapsed = collapsed.has(element.id)
@@ -25,7 +25,9 @@ function Row({ node, depth, collapsed, toggle }) {
             {isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button>
           : <span style={{ width: 20 }} />}
         <span className={`m3-chip level-${element.level}`}>{element.level}</span>
-        <span className="label" style={element.status === 'proposed' ? { opacity: .6, fontStyle: 'italic' } : undefined}>{element.name}</span>
+        <button type="button" className="m3-tree-link" title={`Open ${element.name} in its ${element.level} workspace`}
+          onClick={() => onNavigate?.(element)}
+          style={element.status === 'proposed' ? { opacity: .6, fontStyle: 'italic' } : undefined}>{element.name}</button>
       </div>
       <span className="m3-tree-points">{points != null ? points : '—'}</span>
       <span className="m3-tree-extra" style={{ fontSize: 12, color: 'var(--m3-on-surface-variant)' }}>
@@ -37,11 +39,11 @@ function Row({ node, depth, collapsed, toggle }) {
         {element.status === 'proposed' && <span className="m3-chip">proposed</span>}
       </span>
     </div>
-    {!isCollapsed && node.children.map((child) => <Row key={child.element.id} node={child} depth={depth + 1} collapsed={collapsed} toggle={toggle} />)}
+    {!isCollapsed && node.children.map((child) => <Row key={child.element.id} node={child} depth={depth + 1} collapsed={collapsed} toggle={toggle} onNavigate={onNavigate} />)}
   </Fragment>
 }
 
-export default function RollupDashboard({ projectId }) {
+export default function RollupDashboard({ projectId, onNavigate }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [collapsed, setCollapsed] = useState(new Set())
@@ -96,7 +98,7 @@ export default function RollupDashboard({ projectId }) {
     <div className="m3-tree">
       <div className="m3-tree-row header"><span>Initiative → epic → story → task</span><span>Points</span><span>Coverage / Jira</span><span>Flags</span></div>
       {data.tree.length === 0 && <div className="m3-tree-row"><span style={{ color: 'var(--m3-on-surface-variant)' }}>The C4 model is empty — add elements in the canvas first.</span></div>}
-      {data.tree.map((node) => <Row key={node.element.id} node={node} depth={0} collapsed={collapsed} toggle={toggle} />)}
+      {data.tree.map((node) => <Row key={node.element.id} node={node} depth={0} collapsed={collapsed} toggle={toggle} onNavigate={onNavigate} />)}
     </div>
     <p style={{ color: 'var(--m3-on-surface-variant)', fontSize: 12, marginTop: 10 }}>
       Epic and initiative points are deterministic sums of the justified story estimates beneath them — proposed (unaccepted) stories are excluded.</p>

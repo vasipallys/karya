@@ -55,17 +55,17 @@ function writeDefaultDesktopEnv(target) {
 function desktopBackendEnv(port) {
   const userData = app.getPath('userData')
   const dataDir = path.join(userData, 'data')
-  const envFile = process.env.STORYPOINTER_ENV_FILE || path.join(userData, 'backend.env')
+  const envFile = process.env.KARYA_ENV_FILE || path.join(userData, 'backend.env')
   if (!exists(envFile)) writeDefaultDesktopEnv(envFile)
 
   return {
     ...process.env,
     PYTHONUNBUFFERED: '1',
-    STORYPOINTER_API_HOST: '127.0.0.1',
-    STORYPOINTER_API_PORT: String(port),
-    STORYPOINTER_DB: process.env.STORYPOINTER_DB || path.join(dataDir, 'storypointer.db'),
-    STORYPOINTER_ENV_FILE: envFile,
-    STORYPOINTER_DESKTOP: 'true',
+    KARYA_API_HOST: '127.0.0.1',
+    KARYA_API_PORT: String(port),
+    KARYA_DB: process.env.KARYA_DB || path.join(dataDir, 'karya.db'),
+    KARYA_ENV_FILE: envFile,
+    KARYA_DESKTOP: 'true',
     CORS_ORIGINS: mergeCsv(
       process.env.CORS_ORIGINS,
       'null',
@@ -104,7 +104,7 @@ function walkForExecutable(dir, names) {
 }
 
 function bundledBackendExecutable() {
-  const names = process.platform === 'win32' ? ['storypointer-api.exe'] : ['storypointer-api']
+  const names = process.platform === 'win32' ? ['karya-api.exe'] : ['karya-api']
   return walkForExecutable(path.join(process.resourcesPath || '', 'backend'), names)
 }
 
@@ -155,11 +155,11 @@ async function waitForBackend(baseUrl, timeoutMs = 45000) {
     if (await requestHealth(baseUrl)) return
     await new Promise((resolve) => setTimeout(resolve, 350))
   }
-  throw new Error(`The local Story Pointer API did not become ready at ${baseUrl}.`)
+  throw new Error(`The local Karya API did not become ready at ${baseUrl}.`)
 }
 
 async function chooseBackendPort() {
-  const preferred = Number(process.env.STORYPOINTER_API_PORT || DEFAULT_DESKTOP_PORT)
+  const preferred = Number(process.env.KARYA_API_PORT || DEFAULT_DESKTOP_PORT)
   const preferredBase = `http://127.0.0.1:${preferred}`
   if (await requestHealth(preferredBase)) return { port: preferred, reuse: true }
   if (await portIsAvailable(preferred)) return { port: preferred, reuse: false }
@@ -175,8 +175,8 @@ function attachPackagedLogs(child) {
 }
 
 async function startBackend() {
-  if (process.env.STORYPOINTER_EXTERNAL_API_URL) {
-    apiBaseUrl = process.env.STORYPOINTER_EXTERNAL_API_URL.replace(/\/$/, '')
+  if (process.env.KARYA_EXTERNAL_API_URL) {
+    apiBaseUrl = process.env.KARYA_EXTERNAL_API_URL.replace(/\/$/, '')
     return
   }
 
@@ -206,7 +206,7 @@ async function startBackend() {
   backendProcess.removeAllListeners('exit')
   backendProcess.once('exit', (code, signal) => {
     if (!app.isQuitting && code !== 0) {
-      dialog.showErrorBox('Story Pointer backend stopped', `The local API process exited unexpectedly (${signal || code}).`)
+      dialog.showErrorBox('Karya backend stopped', `The local API process exited unexpectedly (${signal || code}).`)
     }
   })
 }
@@ -224,7 +224,7 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      additionalArguments: [`--storypointer-api-base=${apiBaseUrl}`],
+      additionalArguments: [`--karya-api-base=${apiBaseUrl}`],
     },
   })
 
@@ -236,7 +236,7 @@ function createMainWindow() {
 
   if (process.env.ELECTRON_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_DEV_SERVER_URL)
-    if (process.env.STORYPOINTER_OPEN_DEVTOOLS === 'true') mainWindow.webContents.openDevTools({ mode: 'detach' })
+    if (process.env.KARYA_OPEN_DEVTOOLS === 'true') mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'))
   }
@@ -267,7 +267,7 @@ app.whenReady()
   .then(startBackend)
   .then(createMainWindow)
   .catch((error) => {
-    dialog.showErrorBox('Story Pointer failed to start', error.stack || error.message || String(error))
+    dialog.showErrorBox('Karya failed to start', error.stack || error.message || String(error))
     app.quit()
   })
 

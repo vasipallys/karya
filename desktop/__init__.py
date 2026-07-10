@@ -1,1 +1,1 @@
-"""Desktop packaging helpers for Story Pointer."""
+"""Desktop packaging helpers for Karya."""

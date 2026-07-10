@@ -1,6 +1,6 @@
 # Monorepo Layout
 
-Story Pointer is organized as one repository with three runnable projects:
+Karya is organized as one repository with three runnable projects:
 
 | Project | Path | Owner | Main commands |
 |---|---|---|---|

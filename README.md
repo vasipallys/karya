@@ -1,6 +1,6 @@
-# Story Pointer
+# Karya
 
-Story Pointer is an evidence-led story-point estimator for React/Spring teams in regulated environments. It uses a checkpointed LangGraph pipeline to score delivery factors, identify drivers, compare fixed calibration stories, and only then conclude a modified-Fibonacci estimate. Every number is returned and rendered with a one-line summary and a plain-language explanation.
+Karya is an evidence-led story-point estimator for React/Spring teams in regulated environments. It uses a checkpointed LangGraph pipeline to score delivery factors, identify drivers, compare fixed calibration stories, and only then conclude a modified-Fibonacci estimate. Every number is returned and rendered with a one-line summary and a plain-language explanation.
 
 Around that estimator sits a **project workspace**: create a project, link a code repo and a Jira project, model the system as an interactive **C4 diagram** (Material 3 UI, React Flow canvas), estimate the L3 components as stories with the architecture as evidence, and watch points roll up deterministically to epics (L2) and initiatives (L1).
 
@@ -10,7 +10,7 @@ Around that estimator sits a **project workspace**: create a project, link a cod
 
 - **Frontend:** React 19, Vite, Material 3 shell, React Flow C4 canvas, `react-markdown`/GFM requirement documents, Mermaid 11 rendering, an editable diagram studio, and incremental SSE consumption.
 - **Backend:** FastAPI, Pydantic, LangChain chat-model abstraction, LangGraph `StateGraph` with a durable `AsyncSqliteSaver` checkpointer (falls back to `MemorySaver`).
-- **Persistence:** stdlib SQLite in `data/storypointer.db` for projects, C4 elements/relations, artifact links, L1 teams, costed work plans, Mermaid diagrams, versioned requirements, comments, approvals, and immutable audit events; `data/checkpoints.db` for LangGraph sessions. Override with `STORYPOINTER_DB`. Existing diagram tables are migrated forward so newer Mermaid diagram categories can be stored without recreating the database.
+- **Persistence:** stdlib SQLite in `data/karya.db` for projects, C4 elements/relations, artifact links, L1 teams, costed work plans, Mermaid diagrams, versioned requirements, comments, approvals, and immutable audit events; `data/checkpoints.db` for LangGraph sessions. Override with `KARYA_DB`. Existing diagram tables are migrated forward so newer Mermaid diagram categories can be stored without recreating the database.
 - **Jira:** direct `httpx` integration. Jira Cloud uses REST v3 with Basic auth; Server/Data Center uses REST v2 with Bearer PAT auth. Reads use the documented search resource, writes use `PUT /issue/{issueKey}` and `POST /issue`.
 - **Files:** pandas reads CSV/XLS/XLSX, `openpyxl` reads/writes XLSX, `xlrd` supports legacy XLS, and `python-docx`/`python-pptx` generate requirement exports with rendered Mermaid images.
 - **Calibration:** six fixed stories in `backend/anchors.py`; no embeddings, vector store, or retrieval.
@@ -71,7 +71,7 @@ npm run build
 
 ## Run modes: web and desktop
 
-Story Pointer supports two runtimes that share the same React/FastAPI codebase:
+Karya supports two runtimes that share the same React/FastAPI codebase:
 
 - **Web mode**: run FastAPI and Vite in separate terminals for browser access.
 - **Desktop mode**: run the same UI inside Electron. Electron starts a local FastAPI process, stores SQLite data under the user's app-data folder, and points the UI to that local API at runtime.
@@ -105,7 +105,7 @@ npm run desktop:build:win
 npm run desktop:build:mac
 ```
 
-Desktop builds are written to `release/`. On first desktop launch, Electron creates a user-editable `backend.env` from `desktop/backend.env.example`; it defaults to `LLM_PROVIDER=mock` so the app opens offline. Set `STORYPOINTER_EXTERNAL_API_URL` before launching Electron if you want the desktop shell to use an already-running API instead of starting its own local backend.
+Desktop builds are written to `release/`. On first desktop launch, Electron creates a user-editable `backend.env` from `desktop/backend.env.example`; it defaults to `LLM_PROVIDER=mock` so the app opens offline. Set `KARYA_EXTERNAL_API_URL` before launching Electron if you want the desktop shell to use an already-running API instead of starting its own local backend.
 
 ## Project workspace flow
 

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
 const isWindows = process.platform === 'win32'
-const executableName = isWindows ? 'storypointer-api.exe' : 'storypointer-api'
+const executableName = isWindows ? 'karya-api.exe' : 'karya-api'
 const distPath = path.join(root, 'desktop', 'backend-dist')
 const workPath = path.join(root, 'desktop', 'backend-build')
 
@@ -68,7 +68,7 @@ const result = run(python, [
   distPath,
   '--workpath',
   workPath,
-  path.join(root, 'desktop', 'pyinstaller', 'storypointer-api.spec'),
+  path.join(root, 'desktop', 'pyinstaller', 'karya-api.spec'),
 ])
 
 if (result.status !== 0) process.exit(result.status || 1)

@@ -35,7 +35,7 @@ export default function Login() {
       <div className="login-card">
         <div className="login-brand">
           <span className="m3-brand-mark"><BrainCircuit size={24} /></span>
-          <div><strong>Story Pointer</strong><span>C4 workspace · evidence-led estimation</span></div>
+          <div><strong>Karya</strong><span>C4 workspace · evidence-led estimation</span></div>
         </div>
         <h1 className="login-title">Sign in</h1>
         <p className="login-sub">Choose your identity from the resource directory to continue.</p>

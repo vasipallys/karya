@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project
 
-Story Pointer: an evidence-led story-point estimator (modified Fibonacci 1/2/3/5/8/13) for React/Spring teams. FastAPI backend runs a checkpointed LangGraph pipeline and streams progress over SSE; React 19 + Vite frontend (Material 3 shell) consumes the stream. Stories come from a form, Jira, a spreadsheet upload, or — via the project workspace — from L3 components of an interactive C4 model whose points roll up to epics and initiatives. Each L1 initiative can also carry an operating plan (teams, cost, schedule, architecture diagrams).
+Karya: an evidence-led story-point estimator (modified Fibonacci 1/2/3/5/8/13) for React/Spring teams. FastAPI backend runs a checkpointed LangGraph pipeline and streams progress over SSE; React 19 + Vite frontend (Material 3 shell) consumes the stream. Stories come from a form, Jira, a spreadsheet upload, or — via the project workspace — from L3 components of an interactive C4 model whose points roll up to epics and initiatives. Each L1 initiative can also carry an operating plan (teams, cost, schedule, architecture diagrams).
 
 ## Commands
 
@@ -60,7 +60,7 @@ This is a monorepo. The root `package.json` orchestrates project commands; `fron
 
 ### Project workspace and C4 model
 
-- Persistence is stdlib SQLite ([backend/storage/db.py](backend/storage/db.py)) at `data/storypointer.db` (override: `STORYPOINTER_DB` env var); LangGraph checkpoints go to `data/checkpoints.db` via `AsyncSqliteSaver`, installed in the API lifespan through [backend/graph/checkpoint.py](backend/graph/checkpoint.py) — tests and bare imports fall back to `MemorySaver`.
+- Persistence is stdlib SQLite ([backend/storage/db.py](backend/storage/db.py)) at `data/karya.db` (override: `KARYA_DB` env var); LangGraph checkpoints go to `data/checkpoints.db` via `AsyncSqliteSaver`, installed in the API lifespan through [backend/graph/checkpoint.py](backend/graph/checkpoint.py) — tests and bare imports fall back to `MemorySaver`.
 - `backend/projects/` (CRUD + repo/Jira links) and `backend/c4/` (elements, relations, artifact links, imports, roll-up) follow store/service/router layering. Level rules: an element's parent must be exactly one level up; L1→initiative, L2→epic, L3→story, L4→task (`ARTIFACT_FOR_LEVEL` in [backend/c4/models.py](backend/c4/models.py)); cross-cutting bug/tech_debt/arch_flow artifacts tag elements at allowed levels.
 - Estimation of an element (L3/L4 only) builds a `Story` with `c4_context` (parent chain, relations, code path — see `element_to_story` in [backend/c4/service.py](backend/c4/service.py)) and reuses `stream_story` from [backend/api/streaming.py](backend/api/streaming.py) with an `on_result` callback that persists points and seeds proposed L4 tasks (from `hidden_tasks`) and sibling L3 stories (from split recommendations). Roll-ups are deterministic sums — never LLM output; `proposed` elements are excluded.
 - SSE helpers live in `backend/api/streaming.py` (not `main.py`) so the C4 router can import them without a circular import.
@@ -154,10 +154,10 @@ This is a monorepo. The root `package.json` orchestrates project commands; `fron
 ### Desktop app (`desktop/`, Electron + PyInstaller)
 
 - The same web build and FastAPI backend ship as a self-contained desktop app; no code forks. `desktop/electron/main.cjs` is the Electron main process: it starts the backend, waits on `/health`, then loads the UI (dev server URL when `ELECTRON_DEV_SERVER_URL` is set, otherwise `dist/index.html`).
-- **Backend launch is dual-mode** ([main.cjs](desktop/electron/main.cjs) `backendCommand`): packaged builds run the bundled PyInstaller exe from `process.resourcesPath/backend`; unpackaged (`desktop:dev`) runs `python -m desktop.backend_launcher` from the repo. `backend_launcher.py` just calls `uvicorn.run(..., reload=False)` on host/port from `STORYPOINTER_API_*`.
+- **Backend launch is dual-mode** ([main.cjs](desktop/electron/main.cjs) `backendCommand`): packaged builds run the bundled PyInstaller exe from `process.resourcesPath/backend`; unpackaged (`desktop:dev`) runs `python -m desktop.backend_launcher` from the repo. `backend_launcher.py` just calls `uvicorn.run(..., reload=False)` on host/port from `KARYA_API_*`.
 - **Port handling**: prefers `8765`, reuses an already-healthy instance on it, else picks a random free port — so a dev backend and the desktop app coexist. A single-instance lock prevents duplicate windows.
-- **The UI never bakes in the API URL.** Electron injects the resolved base via `additionalArguments`; `preload.cjs` exposes it as `window.storyPointer.apiBaseUrl`, and [client.js](frontend/src/api/client.js) prefers that over `VITE_API_BASE_URL`. Desktop data is per-user: `STORYPOINTER_DB` and the backend env file live under Electron's `userData` dir, seeded from `desktop/backend.env.example` on first run.
-- **Bundling** ([scripts/build-backend-bundle.mjs](scripts/build-backend-bundle.mjs)) runs PyInstaller against `desktop/pyinstaller/storypointer-api.spec` → `desktop/backend-dist/`; the spec lists provider/langgraph/docx/pptx packages as `hiddenimports` (PyInstaller can't see dynamic imports, so **a new LLM provider or optional dep must be added there** or it's missing at runtime). `desktop:prepare` chains icon gen + web build + backend bundle before `electron-builder` (config in `package.json` `build`).
+- **The UI never bakes in the API URL.** Electron injects the resolved base via `additionalArguments`; `preload.cjs` exposes it as `window.karya.apiBaseUrl`, and [client.js](frontend/src/api/client.js) prefers that over `VITE_API_BASE_URL`. Desktop data is per-user: `KARYA_DB` and the backend env file live under Electron's `userData` dir, seeded from `desktop/backend.env.example` on first run.
+- **Bundling** ([scripts/build-backend-bundle.mjs](scripts/build-backend-bundle.mjs)) runs PyInstaller against `desktop/pyinstaller/karya-api.spec` → `desktop/backend-dist/`; the spec lists provider/langgraph/docx/pptx packages as `hiddenimports` (PyInstaller can't see dynamic imports, so **a new LLM provider or optional dep must be added there** or it's missing at runtime). `desktop:prepare` chains icon gen + web build + backend bundle before `electron-builder` (config in `package.json` `build`).
 
 ### Strict module boundaries
 

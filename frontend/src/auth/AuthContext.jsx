@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { can as roleCan } from './permissions'
 
-const STORAGE_KEY = 'storypointer.auth.user'
+const STORAGE_KEY = 'karya.auth.user'
 const AuthContext = createContext(null)
 
 function loadStored() {

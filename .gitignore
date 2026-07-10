@@ -47,7 +47,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Story Pointer local data (SQLite projects + checkpoints)
+# Karya local data (SQLite projects + checkpoints)
 data/
 
 # Desktop packaging outputs

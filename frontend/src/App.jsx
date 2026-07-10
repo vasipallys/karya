@@ -72,9 +72,9 @@ export default function App() {
 
   return <div className="m3 app-shell">
     <header className="m3-topbar">
-      <button className="m3-brand" onClick={() => go('home')} aria-label="Story Pointer home">
+      <button className="m3-brand" onClick={() => go('home')} aria-label="Karya home">
         <span className="m3-brand-mark"><BrainCircuit size={20} /></span>
-        <span style={{ textAlign: 'left' }}><strong>Story Pointer</strong><small>C4 workspace · evidence-led estimation</small></span>
+        <span style={{ textAlign: 'left' }}><strong>Karya</strong><small>C4 workspace · evidence-led estimation</small></span>
       </button>
       <nav className="m3-topbar-nav">
         <button className={route.name === 'home' || route.name === 'project' || route.name === 'wizard' ? 'active' : ''} onClick={() => go('home')}>Platforms</button>
@@ -97,8 +97,7 @@ export default function App() {
         {route.name === 'home' && <ProjectsHome
           canCreate={can('platform.create')}
           onOpen={(id) => setRoute({ name: 'project', id })}
-          onNew={() => setRoute({ name: 'wizard' })}
-          onQuick={() => setRoute({ name: 'quick' })} />}
+          onNew={() => setRoute({ name: 'wizard' })} />}
         {route.name === 'wizard' && <NewProjectWizard config={config}
           onDone={(id, notice) => setRoute({ name: 'project', id, notice })}
           onCancel={() => setRoute({ name: 'home' })} />}

@@ -6,8 +6,8 @@ function readArgument(name) {
   return match ? match.slice(prefix.length) : ''
 }
 
-contextBridge.exposeInMainWorld('storyPointer', Object.freeze({
-  apiBaseUrl: readArgument('storypointer-api-base') || 'http://localhost:8000',
+contextBridge.exposeInMainWorld('karya', Object.freeze({
+  apiBaseUrl: readArgument('karya-api-base') || 'http://localhost:8000',
   mode: 'electron',
   platform: process.platform,
 }))

@@ -16,14 +16,14 @@ from backend.storage import db
 
 @pytest.fixture
 def work_dir():
-    path = Path(tempfile.mkdtemp(prefix="storypointer-integrations-test-"))
+    path = Path(tempfile.mkdtemp(prefix="karya-integrations-test-"))
     yield path
     shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
 def isolated_db(work_dir, monkeypatch):
-    monkeypatch.setenv("STORYPOINTER_DB", str(work_dir / "test.db"))
+    monkeypatch.setenv("KARYA_DB", str(work_dir / "test.db"))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     db._initialized.clear()
     yield

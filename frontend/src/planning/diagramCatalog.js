@@ -175,7 +175,7 @@ export const DIAGRAM_TYPE_GROUPS = [
         template: `C4Context
   title System context
   Person(user, "User")
-  System(app, "Story Pointer")
+  System(app, "Karya")
   System_Ext(jira, "Jira")
   Rel(user, app, "Estimates stories")
   Rel(app, jira, "Reads issues")`,

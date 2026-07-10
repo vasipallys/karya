@@ -91,11 +91,11 @@ export default function ArchitecturePlanning({ projectId, l1Id, plan, refresh, s
   return <section>
     <div className="l1-section-heading">
       <div><h2>Architecture & infrastructure</h2><p>Edit Mermaid source and see the system view update live. Diagrams remain portable, reviewable, and version-control friendly.</p></div>
-      <div className="l1-heading-actions">
+      {plan.diagrams.length > 0 && <div className="l1-heading-actions">
         <label className="l1-template-picker"><span>Template</span><select value={newType} onChange={(event) => setNewType(event.target.value)}><DiagramTypeOptions /></select></label>
         <button className="m3-btn tonal small" disabled={busy} onClick={() => { setPromptType(newType); setPromptOpen(true) }}><Sparkles size={15} /> Generate with AI</button>
         <button className="m3-btn filled small" disabled={busy} onClick={() => create(newType)}><Plus size={15} /> New view</button>
-      </div>
+      </div>}
     </div>
 
     {plan.diagrams.length === 0

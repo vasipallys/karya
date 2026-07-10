@@ -109,12 +109,26 @@ function Overview({ project, config, onChanged }) {
 export default function ProjectWorkspace({ projectId, config, notice }) {
   const [tab, setTab] = useState('canvas')
   const [planningL1Id, setPlanningL1Id] = useState(null)
+  const [l2Target, setL2Target] = useState(null)
+  const [l3Target, setL3Target] = useState(null)
+  const [l4Target, setL4Target] = useState(null)
   const [project, setProject] = useState(null)
   const [error, setError] = useState(null)
   const [wizard, setWizard] = useState(false)
 
   const refresh = useCallback(() => api.getProject(projectId).then(setProject).catch(setError), [projectId])
   useEffect(() => { refresh() }, [refresh])
+
+  // Deep-link a roll-up row to the workspace that owns that element's level.
+  const openElement = useCallback((element) => {
+    const target = { L1: 'planning', L2: 'l2arch', L3: 'l3arch', L4: 'l4arch' }[element.level]
+    if (!target) return
+    if (element.level === 'L1') setPlanningL1Id(element.id)
+    if (element.level === 'L2') setL2Target(element.id)
+    if (element.level === 'L3') setL3Target(element.id)
+    if (element.level === 'L4') setL4Target(element.id)
+    setTab(target)
+  }, [])
 
   if (error) return <div className="m3-content"><div className="m3-banner error">{String(error.message || error)}</div></div>
   if (!project) return <p className="m3-content">Loading platform…</p>
@@ -140,10 +154,10 @@ export default function ProjectWorkspace({ projectId, config, notice }) {
         onOpenL1Plan={(elementId) => { setPlanningL1Id(elementId); setTab('planning') }} />}
       {tab === 'planning' && <L1Planning projectId={projectId} requestedL1Id={planningL1Id}
         onL1Change={setPlanningL1Id} onOpenCanvas={() => setTab('canvas')} />}
-      {tab === 'l2arch' && <Suspense fallback={<p className="l1-loading">Loading L2 workspace…</p>}><L2Architecture projectId={projectId} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
-      {tab === 'l3arch' && <Suspense fallback={<p className="l1-loading">Loading L3 workspace…</p>}><L3Architecture projectId={projectId} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
-      {tab === 'l4arch' && <Suspense fallback={<p className="l1-loading">Loading L4 workspace…</p>}><L4Architecture projectId={projectId} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
-      {tab === 'rollup' && <RollupDashboard projectId={projectId} />}
+      {tab === 'l2arch' && <Suspense fallback={<p className="l1-loading">Loading L2 workspace…</p>}><L2Architecture projectId={projectId} requestedId={l2Target} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
+      {tab === 'l3arch' && <Suspense fallback={<p className="l1-loading">Loading L3 workspace…</p>}><L3Architecture projectId={projectId} requestedId={l3Target} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
+      {tab === 'l4arch' && <Suspense fallback={<p className="l1-loading">Loading L4 workspace…</p>}><L4Architecture projectId={projectId} requestedId={l4Target} onOpenCanvas={() => setTab('canvas')} /></Suspense>}
+      {tab === 'rollup' && <RollupDashboard projectId={projectId} onNavigate={openElement} />}
       {tab === 'quick' && <QuickEstimate config={config} />}
       {tab === 'overview' && <Overview project={project} config={config} onChanged={refresh} />}
     </div>

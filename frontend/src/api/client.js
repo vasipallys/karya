@@ -1,9 +1,9 @@
-const runtimeConfig = typeof window !== 'undefined' ? window.storyPointer : null
+const runtimeConfig = typeof window !== 'undefined' ? window.karya : null
 const API_BASE = (runtimeConfig?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
 
 // Local demo auth: identify the caller to the backend RBAC middleware. The
 // signed-in user is stored by AuthContext under this key.
-const AUTH_KEY = 'storypointer.auth.user'
+const AUTH_KEY = 'karya.auth.user'
 function authHeaders() {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_KEY) : null

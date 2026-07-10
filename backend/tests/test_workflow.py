@@ -20,14 +20,14 @@ from backend.workflow import service
 
 @pytest.fixture
 def work_dir():
-    path = Path(tempfile.mkdtemp(prefix="storypointer-workflow-test-"))
+    path = Path(tempfile.mkdtemp(prefix="karya-workflow-test-"))
     yield path
     shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
 def isolated_db(work_dir, monkeypatch):
-    monkeypatch.setenv("STORYPOINTER_DB", str(work_dir / "test.db"))
+    monkeypatch.setenv("KARYA_DB", str(work_dir / "test.db"))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     db._initialized.clear()
     yield

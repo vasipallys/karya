@@ -10,7 +10,7 @@
     {
       "name": "frontend-preview",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["cross-env", "VITE_API_BASE_URL=http://localhost:8001", "npm", "--workspace", "@storypointer/web", "run", "dev", "--", "--port", "5174", "--strictPort"],
+      "runtimeArgs": ["cross-env", "VITE_API_BASE_URL=http://localhost:8000", "npm", "--workspace", "@karya/web", "run", "dev", "--", "--port", "5174", "--strictPort"],
       "port": 5174,
       "autoPort": false
     }

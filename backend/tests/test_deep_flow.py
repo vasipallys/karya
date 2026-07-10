@@ -12,14 +12,14 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def work_dir():
-    path = Path(tempfile.mkdtemp(prefix="storypointer-deep-flow-test-"))
+    path = Path(tempfile.mkdtemp(prefix="karya-deep-flow-test-"))
     yield path
     shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture
 def client(work_dir, monkeypatch):
-    monkeypatch.setenv("STORYPOINTER_DB", str(work_dir / "test.db"))
+    monkeypatch.setenv("KARYA_DB", str(work_dir / "test.db"))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     from backend.storage import db
     db._initialized.clear()

@@ -196,7 +196,7 @@ _MOCK_DIAGRAMS = {
     "c4": "\n".join([
         "C4Context",
         "  Person(user, \"User\")",
-        "  System(app, \"Story Pointer\")",
+        "  System(app, \"Karya\")",
         "  Rel(user, app, \"Estimates stories\")",
     ]),
     "gantt": "\n".join([
