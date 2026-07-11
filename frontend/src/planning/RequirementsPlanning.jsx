@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import DockablePanel from '../components/DockablePanel'
+import FlowForward from '../components/FlowForward'
 import MarkdownEditor, { MERMAID_BLOCK_TEMPLATE, renderMermaidImages } from '../components/MarkdownEditor'
 import { DIAGRAM_TYPE_GROUPS } from './diagramCatalog'
 import DiagramStudio from './DiagramStudio'
@@ -297,6 +298,8 @@ export default function RequirementsPlanning({ projectId, l1Id, setError }) {
           <header className="req-editor-toolbar">
             <div className="req-title-field"><input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} aria-label="Requirement document title" /><span className={`req-status ${document.status}`}>{statusLabel(document.status)}</span><small>v{document.version}</small></div>
             <div className="req-export-menu">
+              <FlowForward projectId={projectId} elementId={l1Id} label="AI: epics from doc" childLabel="epics (L2)"
+                guidance={() => `${draft.title}\n\n${draft.content || ''}`} />
               <button className="m3-btn text small" disabled={busy || dirty} onClick={() => exportAs('docx')}><Download size={14} /> Word</button>
               <button className="m3-btn text small" disabled={busy || dirty} onClick={() => exportAs('pptx')}><Download size={14} /> PPT</button>
             </div>

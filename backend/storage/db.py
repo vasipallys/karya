@@ -567,6 +567,35 @@ CREATE INDEX IF NOT EXISTS idx_l1_okrs_element ON l1_okrs(l1_element_id);
 CREATE INDEX IF NOT EXISTS idx_l1_stakeholders_element ON l1_stakeholders(l1_element_id);
 CREATE INDEX IF NOT EXISTS idx_l1_capabilities_element ON l1_capabilities(l1_element_id);
 CREATE INDEX IF NOT EXISTS idx_l1_risks_element ON l1_risks(l1_element_id);
+CREATE TABLE IF NOT EXISTS chat_conversations (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT 'New chat',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user','assistant','system')),
+  text TEXT NOT NULL DEFAULT '',
+  payload TEXT NOT NULL DEFAULT '{{}}',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_attachments (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+  message_id TEXT REFERENCES chat_messages(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  media_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  extracted_text TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_project_user ON chat_conversations(project_id, user_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_attachments_conversation ON chat_attachments(conversation_id);
 """
 
 _initialized: set[str] = set()

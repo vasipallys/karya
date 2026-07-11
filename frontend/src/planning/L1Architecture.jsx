@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Circle, Download, FileText, Gavel, Landmar
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import AiAssist from '../components/AiAssist'
+import FlowForward from '../components/FlowForward'
 import MarkdownEditor, { MarkdownViewer, renderMermaidImages } from '../components/MarkdownEditor'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
@@ -243,7 +244,16 @@ export default function L1Architecture({ projectId, l1Id, setError }) {
 
     {tab === 'vision' && <div className="l1arch-panel">
       <div className="l1arch-section-head"><h3>Vision</h3>
-        <button className="m3-btn filled small" onClick={saveVision} disabled={busy || !vision}>Save vision</button></div>
+        <div className="l1arch-export-actions">
+          <FlowForward projectId={projectId} elementId={l1Id} label="AI: draft epics from vision" childLabel="epics (L2)"
+            guidance={() => [
+              v.vision_statement ? `Vision: ${v.vision_statement}` : '',
+              v.business_problem ? `Problem: ${v.business_problem}` : '',
+              v.target_users ? `Users: ${v.target_users}` : '',
+              okrs.length ? `Objectives: ${okrs.map((o) => o.objective).join('; ')}` : '',
+            ].filter(Boolean).join('\n')} />
+          <button className="m3-btn filled small" onClick={saveVision} disabled={busy || !vision}>Save vision</button>
+        </div></div>
       <VisionField label="Vision statement" fieldKey="vision_statement" detailKey="vision_statement_details" style="vision" rows={3}
         value={v} onChange={setVision} />
       <VisionField label="Business problem" fieldKey="business_problem" detailKey="business_problem_details" style="problem" rows={2}

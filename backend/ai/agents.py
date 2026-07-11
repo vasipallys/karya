@@ -439,18 +439,35 @@ _CHAT_SYSTEM = (
     "the project's C4 model (levels L1 initiative, L2 container, L3 component/story, L4 task).\n"
     "Actions: overview (project status/next step), list (elements at a level), readiness (of a named element "
     "or level), report (roll-up / what to do next), create_element (level+name, optional parent name), "
-    "update_element (name + new_name/status/description), delete_element (name), help, or none.\n"
+    "update_element (name + new_name/status/description), delete_element (name), "
+    "create_relation (name=source element, target=target element, optional label), "
+    "web_search (current/external facts; put the search query in description), code (generate or explain code), "
+    "answer (general questions, attached-file analysis, product guidance), help, or none.\n"
+    "The element name may be inline (“create an L2 payments container” → name payments). A compound request "
+    "like “create X and route/connect it to Y” is ONE create_element with `target` set to Y (and an optional "
+    "`label` like routes/calls/publishes) — the relation is created with the element.\n"
+    "Use CONVERSATION so far to resolve follow-ups: if you previously asked for a missing detail (e.g. a name), "
+    "interpret a short answer as that detail of the pending command.\n"
     "Resolve names against the PROJECT ELEMENTS list. For create/update/delete set the exact element name(s). "
-    "Always write a short, friendly `reply`. Never invent elements that aren't in the list for reads."
+    "For answer/code, give a complete useful Markdown response grounded in the supplied project/file context. "
+    "For web_search, do not invent results; set description to a focused query and let the search tool answer. "
+    "Never invent elements that aren't in the list for reads."
 )
 
 
-async def interpret_chat(project_id: str, message: str) -> ChatCommand:
+async def interpret_chat(project_id: str, message: str, history: list[dict[str, str]] | None = None,
+                         attachment_context: str = "") -> ChatCommand:
     elements = c4_store.list_graph(project_id)["elements"]
     listing = "\n".join(f"- {e['level']} · {e['name']} ({e['status']})" for e in elements[:100]) or "(no elements yet)"
+    convo = "\n".join(
+        f"{(turn.get('role') or 'user').upper()}: {mask_pii(str(turn.get('text') or '').strip())[:300]}"
+        for turn in (history or [])[-8:] if str(turn.get('text') or '').strip()
+    )
     human = (
         f"PROJECT ELEMENTS:\n{listing}\n\n"
-        f"USER MESSAGE:\n{mask_pii(message.strip())}\n\n"
+        + (f"CONVERSATION SO FAR:\n{convo}\n\n" if convo else "")
+        + (f"ATTACHED FILE CONTENT:\n{mask_pii(attachment_context)}\n\n" if attachment_context else "")
+        + f"USER MESSAGE:\n{mask_pii(message.strip())}\n\n"
         "Interpret into one command."
     )
     return await _invoke(ChatCommand, _CHAT_SYSTEM, human)

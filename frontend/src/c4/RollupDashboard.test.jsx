@@ -41,4 +41,12 @@ describe('RollupDashboard deep-linking', () => {
     expect(() => fireEvent.click(row)).not.toThrow()
     await waitFor(() => expect(screen.getByText('Payments')).toBeInTheDocument())
   })
+
+  it('refetches when the reload token bumps (e.g. after a chat-assistant apply)', async () => {
+    const { rerender } = render(<RollupDashboard projectId="p1" reloadToken={0} />)
+    await waitFor(() => expect(api.rollup).toHaveBeenCalledTimes(1))
+
+    rerender(<RollupDashboard projectId="p1" reloadToken={1} />)
+    await waitFor(() => expect(api.rollup).toHaveBeenCalledTimes(2))
+  })
 })

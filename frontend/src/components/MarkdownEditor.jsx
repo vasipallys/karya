@@ -18,26 +18,11 @@ import {
   Strikethrough,
   Table,
 } from 'lucide-react'
-import mermaid from 'mermaid'
 import { Children, forwardRef, isValidElement, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import MermaidView from './MermaidView'
-
-mermaid.initialize({
-  startOnLoad: false,
-  securityLevel: 'strict',
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#d3e3fd',
-    primaryTextColor: '#1f1f1f',
-    primaryBorderColor: '#0b57d0',
-    lineColor: '#5f6368',
-    secondaryColor: '#e6f4ea',
-    tertiaryColor: '#fef7e0',
-    fontFamily: 'Roboto, sans-serif',
-  },
-})
+import { renderMermaid } from './mermaidRuntime'
 
 export const MERMAID_BLOCK_TEMPLATE = `
 
@@ -176,7 +161,7 @@ export async function renderMermaidImages(markdown) {
   for (const block of findMermaidBlocks(markdown)) {
     try {
       const id = `markdown-export-${Date.now()}-${Math.random().toString(16).slice(2)}`
-      const { svg } = await mermaid.render(id, block.source)
+      const { svg } = await renderMermaid(block.source, id)
       images.push(await svgToPng(svg))
     } catch {
       images.push('')

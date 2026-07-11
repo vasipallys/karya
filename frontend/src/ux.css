@@ -117,6 +117,41 @@
    ============================================================ */
 .ai-hint { font-size: 12.5px; color: var(--m3-on-surface-variant); margin: 8px 0 0; }
 
+/* Assistant window modes + deep links */
+.chatdock.mode-docked { top: 64px; right: 0; bottom: 0; width: min(430px, 94vw); height: auto; border-radius: 16px 0 0 0; }
+.chatdock.mode-max { top: 64px; right: 16px; bottom: 16px; width: min(760px, 94vw); height: auto; }
+.chatdock-link { display: inline-flex; align-items: center; gap: 3px; border: 0; padding: 0; background: none; font: inherit; color: var(--m3-primary); cursor: pointer; }
+.chatdock-link:hover, .chatdock-link:focus-visible { text-decoration: underline; }
+.chatdock-open { margin-top: 7px; font-size: 12.5px; font-weight: 500; }
+.chatdock-score .chatdock-link { margin-left: 8px; font-size: 12px; }
+
+/* Assistant agent activity (concurrent branches) + evidence */
+.chatdock-activity { display: flex; flex-direction: column; gap: 7px; min-width: 230px; }
+.chatdock-branch { display: flex; align-items: baseline; gap: 7px; font-size: 12px; color: var(--m3-on-surface-variant); }
+.chatdock-branch strong { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--m3-on-surface); flex: none; }
+.chatdock-branch span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chatdock-branch-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; align-self: center; background: var(--m3-outline); animation: chatdock-blink 1s ease-in-out infinite; }
+.chatdock-branch.done .chatdock-branch-dot { background: #146c2e; animation: none; }
+.chatdock-branch.judge .chatdock-branch-dot { background: var(--m3-primary); }
+.chatdock-evidence { margin-top: 8px; font-size: 12px; }
+.chatdock-evidence summary { cursor: pointer; color: var(--m3-primary); font-weight: 500; }
+.chatdock-evidence p { margin: 5px 0 0; color: var(--m3-on-surface-variant); }
+
+/* Assistant voice input */
+.chatdock-mic { flex: none; }
+.chatdock-mic.listening { background: #fde7e9; color: #b3261e; animation: chatdock-mic-pulse 1.2s ease-in-out infinite; }
+@keyframes chatdock-mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(179, 38, 30, .25); } 50% { box-shadow: 0 0 0 6px rgba(179, 38, 30, 0); } }
+
+/* "Flow forward" proposal review (vision → epics → stories → tasks) */
+.flow-forward-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow: auto; }
+.flow-forward-list label { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--m3-outline-variant); border-radius: 10px; cursor: pointer; }
+.flow-forward-list label:hover { background: var(--m3-surface-container); }
+.flow-forward-list input { margin-top: 3px; flex: none; }
+.flow-forward-list span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.flow-forward-list strong { font-size: 13.5px; }
+.flow-forward-list small { color: var(--m3-on-surface-variant); font-size: 12px; line-height: 1.45; }
+.flow-forward-list em { color: var(--m3-primary); font-size: 11.5px; font-style: normal; }
+
 /* Global "Ask AI" orchestrator dialog */
 .ask-ai-result { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .ask-ai-result .m3-btn { align-self: flex-start; }
@@ -305,7 +340,25 @@
 .chatdock-suggest button { font-size: 12px; padding: 6px 10px; border: 1px solid var(--m3-outline-variant); border-radius: 999px; background: var(--m3-surface); cursor: pointer; color: var(--m3-on-surface-variant); }
 .chatdock-suggest button:hover { border-color: var(--m3-primary); color: var(--m3-primary); }
 .chatdock-input { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--m3-outline-variant); }
-.chatdock-input input { flex: 1; border: 1px solid var(--m3-outline-variant); border-radius: 999px; padding: 9px 14px; font: inherit; font-size: 13.5px; }
+.chatdock-compose { flex: 1; min-width: 0; border: 1px solid var(--m3-outline-variant); border-radius: 18px; overflow: hidden; background: var(--m3-surface); }
+.chatdock-compose > input { width: 100%; box-sizing: border-box; border: 0; padding: 9px 14px; font: inherit; font-size: 13.5px; outline: none; background: transparent; }
+.chatdock-files { display: flex; flex-wrap: wrap; gap: 5px; padding: 7px 8px 0; }
+.chatdock-files > span { display: inline-flex; align-items: center; gap: 4px; max-width: 180px; padding: 3px 7px; border-radius: 8px; background: var(--m3-surface-container-high); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chatdock-files button { border: 0; background: none; cursor: pointer; color: inherit; }
+.chatdock-history { position: absolute; inset: 49px 0 0; z-index: 5; padding: 12px; overflow-y: auto; background: var(--m3-surface); }
+.chatdock-history-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.chatdock-history > button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 10px; padding: 10px; background: transparent; text-align: left; cursor: pointer; color: inherit; }
+.chatdock-history > button:hover, .chatdock-history > button.active { background: var(--m3-surface-container-high); }
+.chatdock-history > button span { min-width: 0; }
+.chatdock-history > button strong, .chatdock-history > button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chatdock-history > button small { margin-top: 3px; color: var(--m3-on-surface-variant); font-size: 10px; }
+.chatdock-empty { margin: auto; max-width: 290px; padding: 40px 20px; text-align: center; color: var(--m3-on-surface-variant); }
+.chatdock-empty h3 { margin: 10px 0 5px; color: var(--m3-on-surface); }
+.chatdock-empty p { margin: 0; font-size: 13px; }
+.chatdock-text > :first-child { margin-top: 0; }
+.chatdock-text > :last-child { margin-bottom: 0; }
+.chatdock-text pre { overflow-x: auto; padding: 9px; border-radius: 8px; background: #17212b; color: #e5edf4; font-size: 11px; }
+.chatdock-text a { color: var(--m3-primary); }
 .chatdock-typing { display: flex; gap: 4px; }
 .chatdock-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--m3-on-surface-variant); animation: chatdock-blink 1.2s infinite both; }
 .chatdock-typing span:nth-child(2) { animation-delay: .2s; }
@@ -431,3 +484,30 @@
 .l2-diagram-preview { position: relative; background-image: radial-gradient(#d7dce2 1px, transparent 1px); background-size: 18px 18px; }
 .l2-diagram-preview .mv { min-height: 0; }
 @media (max-width: 900px) { .l2-diagram-grid { grid-template-columns: 1fr; height: auto; } .l2-diagram-code { height: 220px; } .l2-diagram-preview { height: 300px; } }
+
+/* ---- Shared Mermaid workbench: L1-L4, documents, AI and previews ---- */
+.mermaid-workbench { border: 1px solid var(--m3-outline-variant); border-radius: 14px; overflow: hidden; background: var(--m3-surface); }
+.mermaid-workbench-toolbar { min-height: 46px; display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 14px; border-bottom: 1px solid var(--m3-outline-variant); background: var(--m3-surface-container); }
+.mermaid-workbench-title { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.mermaid-workbench-actions { margin-left: auto; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.mermaid-mode-toggle { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--m3-surface-container-high); }
+.mermaid-mode-toggle button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 7px; padding: 5px 7px; background: transparent; color: var(--m3-on-surface-variant); font: inherit; font-size: 11px; cursor: pointer; }
+.mermaid-mode-toggle button.active { background: var(--m3-surface); color: var(--m3-primary); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.mermaid-ai-bar { display: grid; grid-template-columns: minmax(150px, 210px) minmax(240px, 1fr) auto auto; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--m3-outline-variant); background: var(--m3-primary-container); }
+.mermaid-ai-bar select, .mermaid-ai-bar textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--m3-outline-variant); border-radius: 9px; padding: 8px 10px; background: var(--m3-surface); color: inherit; font: inherit; font-size: 12px; resize: vertical; }
+.mermaid-ai-message { display: flex; align-items: center; gap: 5px; padding: 6px 12px; color: #0f6d38; background: #eaf6ee; font-size: 11.5px; }
+.mermaid-ai-message.error { color: var(--m3-error); background: #fdecec; }
+.mermaid-workbench-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); height: 390px; }
+.mermaid-workbench.mode-edit .mermaid-workbench-grid, .mermaid-workbench.mode-preview .mermaid-workbench-grid { grid-template-columns: 1fr; }
+.mermaid-source-pane, .mermaid-preview-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mermaid-source-pane { border-right: 1px solid var(--m3-outline-variant); }
+.mermaid-source-pane > header, .mermaid-preview-pane > header { height: 32px; display: flex; align-items: center; padding: 0 11px; border-bottom: 1px solid var(--m3-outline-variant); color: var(--m3-on-surface-variant); font-size: 10px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
+.mermaid-source-pane textarea { flex: 1; min-height: 0; border: 0; resize: none; padding: 14px; outline: none; background: #17212b; color: #e5edf4; font: 400 12px/1.6 'Roboto Mono', Consolas, monospace; }
+.mermaid-preview-pane { position: relative; background-image: radial-gradient(#d7dce2 1px, transparent 1px); background-size: 18px 18px; }
+.mermaid-preview-pane .mv { min-height: 0; }
+@media (max-width: 900px) {
+  .mermaid-ai-bar { grid-template-columns: 1fr; }
+  .mermaid-workbench-grid { grid-template-columns: 1fr; height: auto; }
+  .mermaid-source-pane { height: 240px; border-right: 0; border-bottom: 1px solid var(--m3-outline-variant); }
+  .mermaid-preview-pane { height: 320px; }
+}

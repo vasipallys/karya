@@ -1,10 +1,12 @@
-import { Boxes, CheckCircle2, Circle, DownloadCloud, FileText, Gavel, GitBranch, Grid3x3, Network, Pencil, PencilRuler, Plug, Plus, RefreshCw, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
+import { Boxes, CheckCircle2, Circle, DownloadCloud, FileText, Gavel, GitBranch, Grid3x3, Network, Pencil, Plug, Plus, RefreshCw, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import AiAssist from '../components/AiAssist'
+import FlowForward from '../components/FlowForward'
 import LevelBreadcrumb from '../components/LevelBreadcrumb'
 import { MarkdownViewer } from '../components/MarkdownEditor'
 import MermaidView from '../components/MermaidView'
+import MermaidWorkbench from '../components/MermaidWorkbench'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
 
@@ -91,7 +93,7 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'at_risk', 'blocked', 'restricted'].includes(v) ? 'sub-partiallyallocated' : ['low', 'done', 'met', 'active', 'public'].includes(v) ? 'ok' : ''}`
 
-export default function L2Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement }) {
+export default function L2Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement, reloadToken }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
   const [allElements, setAllElements] = useState([])
@@ -111,7 +113,7 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
 
   const fail = (err) => { setError(err); toast.error(err) }
 
-  useEffect(() => {
+  const loadGraph = useCallback(() => {
     api.c4Graph(projectId).then((g) => {
       const l2s = g.elements.filter((e) => e.level === 'L2')
       setElements(l2s)
@@ -119,6 +121,7 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
       setL2Id((cur) => cur && l2s.some((e) => e.id === cur) ? cur : (l2s[0]?.id || ''))
     }).catch(fail)
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadGraph() }, [loadGraph, reloadToken])
 
   const load = useCallback(() => {
     if (!l2Id) return
@@ -203,6 +206,14 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
           <LevelBreadcrumb elements={allElements} elementId={l2Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
+        <FlowForward projectId={projectId} elementId={l2Id} label="AI: draft stories" childLabel="stories (L3)"
+          disabled={!l2Id} onApplied={loadGraph}
+          guidance={() => [
+            ws?.element?.name ? `Epic: ${ws.element.name}` : '',
+            summary ? `Summary: ${summary}` : '',
+            ws?.containers?.length ? `Containers: ${ws.containers.map((c) => c.name).join(', ')}` : '',
+            ws?.apis?.length ? `APIs: ${ws.apis.map((a) => a.name).join(', ')}` : '',
+          ].filter(Boolean).join('\n')} />
         <button className="m3-btn tonal small" onClick={runAi} disabled={ai?.loading}><Sparkles size={15} /> {ai?.loading ? 'Drafting…' : 'AI generate L2'}</button>
         <button className="m3-btn outlined small" onClick={() => setImportDlg({ kind: 'openapi', content: '' })}><DownloadCloud size={15} /> Import</button>
         <button className="m3-icon-btn" onClick={load} aria-label="Refresh"><RefreshCw size={17} /></button>
@@ -226,18 +237,12 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
             ].filter(Boolean).join('\n')}
             onResult={setSummary} /></div>
         <textarea className="vision-field-summary" rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One-paragraph L2 architecture summary" />
-        <div className="l1arch-section-head"><h3>C4 container diagram <small>Mermaid — portable & reviewable</small></h3>
-          <div className="l1arch-export-actions">
-            <button className="m3-btn outlined small" onClick={() => setStudio(true)}><PencilRuler size={14} /> Open studio</button>
-            <button className="m3-btn filled small" disabled={busy} onClick={() => saveArch({ summary, container_diagram: diagram })}>Save</button>
-          </div>
-        </div>
-        <div className="l2-diagram-grid">
-          <div className="l2-diagram-code"><header>Mermaid source</header>
-            <textarea spellCheck="false" value={diagram} onChange={(e) => setDiagram(e.target.value)} placeholder={'flowchart LR\n  Web --> API\n  API --> DB[(Database)]'} /></div>
-          <div className="l2-diagram-preview"><header>Live preview</header>
-            {diagram.trim() ? <MermaidView source={diagram} /> : <p className="l1-node-empty">Write Mermaid or use “AI generate L2”.</p>}</div>
-        </div>
+        <div className="l1arch-section-head"><h3>C4 container diagram <small>Mermaid — portable & reviewable</small></h3></div>
+        <MermaidWorkbench projectId={projectId} source={diagram} onChange={setDiagram} saving={busy}
+          title="C4 container diagram" diagramType="c4" onOpenStudio={() => setStudio(true)}
+          onSave={() => saveArch({ summary, container_diagram: diagram })}
+          placeholder={'flowchart LR\n  Web --> API\n  API --> DB[(Database)]'}
+          aiContext={[ws.element.name, summary, ...ws.containers.map((item) => item.name), ...ws.apis.map((item) => item.name)].filter(Boolean).join('\n')} />
         <div className="l1arch-section-head"><h3>Container status</h3></div>
         <div className="l1-form-grid">
           <label className="m3-field"><span>Lifecycle status</span>

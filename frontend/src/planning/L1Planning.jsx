@@ -18,7 +18,7 @@ const SECTIONS = [
 ]
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'AUD', 'CAD', 'JPY', 'SGD']
 
-export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpenCanvas, onOpenElement }) {
+export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpenCanvas, onOpenElement, reloadToken }) {
   const [graph, setGraph] = useState({ elements: [], relations: [] })
   const [l1Id, setL1Id] = useState(requestedL1Id || '')
   const [plan, setPlan] = useState(null)
@@ -48,7 +48,7 @@ export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpe
     setPlan(next)
   }, [projectId, l1Id])
 
-  useEffect(() => { loadGraph().catch(setError).finally(() => setLoading(false)) }, [loadGraph])
+  useEffect(() => { loadGraph().catch(setError).finally(() => setLoading(false)) }, [loadGraph, reloadToken])
   useEffect(() => { if (requestedL1Id) setL1Id(requestedL1Id) }, [requestedL1Id])
   useEffect(() => { if (l1Id) onL1Change?.(l1Id) }, [l1Id, onL1Change])
   useEffect(() => { setPlan(null); if (l1Id) refresh().catch(setError) }, [l1Id, refresh])

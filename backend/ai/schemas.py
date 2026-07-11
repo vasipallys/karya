@@ -255,7 +255,8 @@ class ChatCommand(BaseModel):
     are surfaced to the user as a proposal to apply."""
     action: Literal[
         "overview", "list", "readiness", "report",
-        "create_element", "update_element", "delete_element", "help", "none",
+        "create_element", "update_element", "delete_element", "create_relation",
+        "answer", "code", "web_search", "help", "none",
     ] = "help"
     level: str = Field(default="", max_length=4)       # L1–L4 (list / create)
     name: str = Field(default="", max_length=200)      # target element name
@@ -263,4 +264,6 @@ class ChatCommand(BaseModel):
     new_name: str = Field(default="", max_length=200)  # rename target
     status: str = Field(default="", max_length=40)     # update status
     description: str = Field(default="", max_length=2000)
-    reply: str = Field(default="", max_length=1200)    # natural-language answer
+    target: str = Field(default="", max_length=200)    # relation target name (create_relation, or create_element + route)
+    label: str = Field(default="", max_length=120)     # relation label, e.g. "routes"
+    reply: str = Field(default="", max_length=12000)   # markdown answer / generated code

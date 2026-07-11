@@ -610,55 +610,117 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
     if schema is ChatCommand:
         msg_match = re.search(r"USER MESSAGE:\s*(.+?)\n\nInterpret", text, re.DOTALL)
         msg = (msg_match.group(1) if msg_match else text).strip()
-        low = msg.lower()
         # Known element names from the PROJECT ELEMENTS listing help resolve targets.
         names = re.findall(r"·\s*(.+?)\s*\(", text)
         names.sort(key=len, reverse=True)
-        found = next((n for n in names if n.lower() in low), "")
-        level_match = re.search(r"\bl([1-4])\b", low)
-        level = f"L{level_match.group(1)}" if level_match else ""
 
-        def _after(*words):
-            for w in words:
-                m = re.search(rf"\b{w}\s+(.+)", msg, re.IGNORECASE)
-                if m:
-                    return m.group(1).strip().strip('"“”').rstrip("?.")
-            return ""
+        def _squash(value):
+            return re.sub(r"[^a-z0-9]+", "", value.lower())
 
-        if re.search(r"\brename\b", low):
-            target = re.search(r"rename\s+(.+?)\s+to\s+(.+)", msg, re.IGNORECASE)
-            if target:
-                return ChatCommand(action="update_element", name=target.group(1).strip(), new_name=target.group(2).strip().rstrip("?."),
-                                   reply=f"Rename “{target.group(1).strip()}” — Apply to confirm.")
-        if "status" in low and " to " in low:
-            st = re.search(r"status\s+to\s+(\w+)", low)
-            return ChatCommand(action="update_element", name=found, status=(st.group(1) if st else ""),
-                               reply=f"Update status of “{found}” — Apply to confirm.")
-        if re.search(r"\b(delete|remove)\b", low):
-            return ChatCommand(action="delete_element", name=found or _after("delete", "remove"),
-                               reply="Delete that element — Apply to confirm.")
-        if re.search(r"\b(create|add|new)\b", low):
-            name = ""
-            nm = re.search(r"(?:called|named)\s+(.+?)(?:\s+under\s+|$)", msg, re.IGNORECASE)
-            if nm:
-                name = nm.group(1).strip().strip('"“”')
-            parent = ""
-            pm = re.search(r"\bunder\s+(.+)", msg, re.IGNORECASE)
-            if pm:
-                parent = pm.group(1).strip().strip('"“”').rstrip("?.")
-            return ChatCommand(action="create_element", level=level, name=name, parent=parent,
-                               reply=f"Create {level or 'element'} “{name}” — Apply to confirm.")
-        if re.search(r"\b(list|show|how many)\b", low):
-            return ChatCommand(action="list", level=level, reply="Here's what I found.")
-        if re.search(r"readiness|ready|complete", low):
-            return ChatCommand(action="readiness", level=level, name=found, reply="Checking readiness.")
-        if re.search(r"next|what should|recommend|roll.?up|report|estimat", low):
-            return ChatCommand(action="report", reply="Here's the roll-up and next step.")
-        if re.search(r"overview|status|progress|where am i|summary", low):
-            return ChatCommand(action="overview", reply="Here's the project status.")
-        if "help" in low or "what can you" in low:
-            return ChatCommand(action="help", reply="")
-        return ChatCommand(action="help", reply="")
+        def _known(fragment):
+            """Resolve a free-text fragment (“the api gateway”) to a known element name (“api-gateway”)."""
+            frag = _squash(fragment)
+            if not frag:
+                return ""
+            return next((n for n in names if _squash(n) in frag or frag in _squash(n)), "")
+
+        _TYPE_WORDS = r"container|component|task|story|system|element|service|module|initiative|epic"
+
+        def _parse(msg):
+            low = msg.lower()
+            found = next((n for n in names if n.lower() in low), "")
+            level_match = re.search(r"\bl([1-4])\b", low)
+            level = f"L{level_match.group(1)}" if level_match else ""
+
+            def _after(*words):
+                for w in words:
+                    m = re.search(rf"\b{w}\s+(.+)", msg, re.IGNORECASE)
+                    if m:
+                        return m.group(1).strip().strip('"“”').rstrip("?.")
+                return ""
+
+            if re.search(r"\brename\b", low):
+                target = re.search(r"rename\s+(.+?)\s+to\s+(.+)", msg, re.IGNORECASE)
+                if target:
+                    return ChatCommand(action="update_element", name=target.group(1).strip(), new_name=target.group(2).strip().rstrip("?."),
+                                       reply=f"Rename “{target.group(1).strip()}” — Apply to confirm.")
+            if "status" in low and " to " in low:
+                st = re.search(r"status\s+to\s+(\w+)", low)
+                return ChatCommand(action="update_element", name=found, status=(st.group(1) if st else ""),
+                                   reply=f"Update status of “{found}” — Apply to confirm.")
+            if re.search(r"\b(delete|remove)\b", low):
+                return ChatCommand(action="delete_element", name=found or _after("delete", "remove"),
+                                   reply="Delete that element — Apply to confirm.")
+            if re.search(r"\b(create|add|new)\b", low):
+                body = msg
+                # “… and route/connect it to/through/via Y” → relation target created with the element.
+                target = ""
+                label = ""
+                rt = re.search(r"\b(?:and\s+)?(route|connect|link|wire|publish|call)(?:e?s)?(?:\s+it)?(?:\s+(?:to|through|via|into|with))+\s+(.+)$", msg, re.IGNORECASE)
+                if rt:
+                    target = _known(rt.group(2)) or rt.group(2).strip().strip('"“”').rstrip("?.")
+                    label = {"route": "routes", "connect": "connects to", "link": "links to",
+                             "wire": "connects to", "publish": "publishes to", "call": "calls"}[rt.group(1).lower()]
+                    body = msg[: rt.start()].rstrip(" ,.")
+                name = ""
+                nm = re.search(r"(?:called|named)\s+(.+?)(?:\s+under\s+|$)", body, re.IGNORECASE)
+                if nm:
+                    name = nm.group(1).strip().strip('"“”')
+                if not name:
+                    # Inline name: “create a L2 payments container”, “add a reporting service”.
+                    inline = re.search(rf"\b(?:create|add|new)\b\s+(?:an?\s+)?(?:l[1-4]\s+)?(?:new\s+)?[\"“”]?(.+?)[\"“”]?\s+(?:{_TYPE_WORDS})\b", body, re.IGNORECASE)
+                    if inline:
+                        candidate = re.sub(r"^\s*(?:an?|the|l[1-4])\s+", "", inline.group(1).strip(), flags=re.IGNORECASE).strip()
+                        if candidate and not re.fullmatch(r"an?|the|new|l[1-4]", candidate, re.IGNORECASE):
+                            name = candidate
+                parent = ""
+                pm = re.search(r"\bunder\s+(.+)", body, re.IGNORECASE)
+                if pm:
+                    parent = pm.group(1).strip().strip('"“”').rstrip("?.")
+                return ChatCommand(action="create_element", level=level, name=name, parent=parent,
+                                   target=target, label=label,
+                                   reply=f"Create {level or 'element'} “{name}” — Apply to confirm.")
+            if re.search(r"\b(route|connect|link|wire)\b", low):
+                rel = re.search(r"\b(?:route|connect|link|wire)\s+(.+?)\s+(?:to|through|via|with)\s+(.+)$", msg, re.IGNORECASE)
+                if rel:
+                    source = _known(rel.group(1)) or rel.group(1).strip()
+                    target = _known(rel.group(2)) or rel.group(2).strip().rstrip("?.")
+                    return ChatCommand(action="create_relation", name=source, target=target, label="routes",
+                                       reply=f"Connect “{source}” to “{target}” — Apply to confirm.")
+            if re.search(r"\b(list|show|how many)\b", low):
+                return ChatCommand(action="list", level=level, reply="Here's what I found.")
+            if re.search(r"readiness|ready|complete", low):
+                return ChatCommand(action="readiness", level=level, name=found, reply="Checking readiness.")
+            if re.search(r"next|what should|recommend|roll.?up|report|estimat", low):
+                return ChatCommand(action="report", reply="Here's the roll-up and next step.")
+            if re.search(r"overview|status|progress|where am i|summary", low):
+                return ChatCommand(action="overview", reply="Here's the project status.")
+            if "help" in low or "what can you" in low:
+                return ChatCommand(action="help", reply="")
+            if re.search(r"\b(search|browse|internet|web|latest|current news)\b", low):
+                query = re.sub(r"^(?:please\s+)?(?:search|browse)(?:\s+the)?(?:\s+web|\s+internet)?\s+(?:for\s+)?", "", msg, flags=re.I)
+                return ChatCommand(action="web_search", description=query or msg, reply="Searching the web.")
+            if re.search(r"\b(code|function|class|component|script|implement|generate)\b", low):
+                return ChatCommand(action="code", reply=(
+                    "Mock mode can classify this as a code-generation request, but a configured LLM provider "
+                    "is needed for production-quality generated code. Your request was: **" + msg + "**"
+                ))
+            return None
+
+        command = _parse(msg)
+        if command is None:
+            # Follow-up answer (e.g. just “payments” after “what should it be called?”):
+            # retry against the last user turn that carried a create/update intent.
+            convo = re.search(r"CONVERSATION SO FAR:\n(.*?)\n\nUSER MESSAGE", text, re.DOTALL)
+            if convo:
+                user_turns = re.findall(r"^USER:\s*(.+)$", convo.group(1), re.MULTILINE)
+                pending = next((t for t in reversed(user_turns) if re.search(r"\b(create|add|new|rename)\b", t, re.IGNORECASE)), "")
+                if pending and len(msg) <= 60:
+                    command = _parse(f"{pending.rstrip('?. ')} called {msg}")
+        return command or ChatCommand(action="answer", reply=(
+            "Mock mode is active. I can still inspect project status, readiness, reports, attached text files, "
+            "and propose workspace changes. Configure a full LLM provider for open-ended answers."
+        ))
 
     if schema is OrchestratorPlan:
         request = text.lower()

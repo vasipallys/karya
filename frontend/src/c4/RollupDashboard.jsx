@@ -43,7 +43,7 @@ function Row({ node, depth, collapsed, toggle, onNavigate }) {
   </Fragment>
 }
 
-export default function RollupDashboard({ projectId, onNavigate }) {
+export default function RollupDashboard({ projectId, onNavigate, reloadToken }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [collapsed, setCollapsed] = useState(new Set())
@@ -51,7 +51,7 @@ export default function RollupDashboard({ projectId, onNavigate }) {
   const stop = useRef(false)
 
   const refresh = useCallback(() => api.rollup(projectId).then(setData).catch(setError), [projectId])
-  useEffect(() => { refresh(); return () => { stop.current = true } }, [refresh])
+  useEffect(() => { refresh(); return () => { stop.current = true } }, [refresh, reloadToken])
 
   const toggle = (id) => setCollapsed((current) => {
     const next = new Set(current)

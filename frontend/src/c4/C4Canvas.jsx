@@ -28,7 +28,7 @@ function C4Node({ data }) {
 
 const nodeTypes = { c4: C4Node }
 
-export default function C4Canvas({ projectId, config, onOpenL1Plan }) {
+export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken }) {
   const [graph, setGraph] = useState({ elements: [], relations: [] })
   const [drill, setDrill] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -41,7 +41,9 @@ export default function C4Canvas({ projectId, config, onOpenL1Plan }) {
   const resultsCache = useRef(new Map())
 
   const refresh = useCallback(() => api.c4Graph(projectId).then(setGraph).catch(setError), [projectId])
-  useEffect(() => { refresh() }, [refresh])
+  // reloadToken bumps when something outside the canvas (e.g. the chat
+  // assistant) changes the model, so the graph never goes stale.
+  useEffect(() => { refresh() }, [refresh, reloadToken])
 
   const runScaffold = async () => {
     if (!scaffold.description.trim()) return

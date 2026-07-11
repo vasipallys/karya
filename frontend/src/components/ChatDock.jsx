@@ -1,5 +1,7 @@
-import { Bot, Check, MessageSquare, Send, Sparkles, X } from 'lucide-react'
+import { ArrowUpRight, Bot, Check, History, Maximize2, MessageSquare, Mic, Minimize2, Paperclip, PanelRight, PanelRightClose, Plus, Send, Sparkles, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { useToast } from '../ui/Toast'
@@ -13,7 +15,7 @@ const SUGGESTIONS = [
 
 // Floating conversational assistant: query / report over the project, and propose
 // C4 changes that the user applies with one click (writes need platform.edit).
-export default function ChatDock({ projectId, onChanged }) {
+export default function ChatDock({ projectId, onChanged, onOpenElement }) {
   const toast = useToast()
   const { can } = useAuth()
   const canEdit = can('platform.edit')
@@ -21,22 +23,147 @@ export default function ChatDock({ projectId, onChanged }) {
   const [messages, setMessages] = useState([{ role: 'assistant', text: "Hi! Ask me about this platform, or tell me to create, rename or delete an element. I'll propose changes before anything is saved." }])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [conversationId, setConversationId] = useState(null)
+  const [conversations, setConversations] = useState([])
+  const [showHistory, setShowHistory] = useState(false)
+  const [attachments, setAttachments] = useState([])
+  const fileInput = useRef(null)
+  const [listening, setListening] = useState(false)
+  const [speaking, setSpeaking] = useState(false)
+  // Window mode: floating bubble, docked right-side panel, or maximized.
+  const [mode, setMode] = useState(() => {
+    try { return window.localStorage.getItem('karya.chatdock.mode') || 'float' } catch { return 'float' }
+  })
+  useEffect(() => { try { window.localStorage.setItem('karya.chatdock.mode', mode) } catch { /* ignore */ } }, [mode])
   const scroller = useRef(null)
+  const recognition = useRef(null)
+  const speakingRef = useRef(false)
+  const SpeechRec = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null
 
   useEffect(() => { if (open && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight }, [messages, open])
+  useEffect(() => { speakingRef.current = speaking; if (!speaking) window.speechSynthesis?.cancel() }, [speaking])
+  useEffect(() => () => { recognition.current?.stop?.(); window.speechSynthesis?.cancel() }, [])
+  useEffect(() => {
+    if (!open) return
+    api.chatConversations?.(projectId).then(setConversations).catch(() => {})
+  }, [open, projectId, messages.length])
+
+  const newChat = async () => {
+    const convo = await api.chatNewConversation(projectId)
+    setConversationId(convo.id); setMessages([]); setAttachments([]); setShowHistory(false)
+  }
+
+  const openConversation = async (id) => {
+    const convo = await api.chatConversation(projectId, id)
+    setConversationId(id)
+    setMessages(convo.messages.map((m) => ({ role: m.role, text: m.text, ...(m.payload || {}) })))
+    setAttachments([]); setShowHistory(false)
+  }
+
+  const removeConversation = async (event, id) => {
+    event.stopPropagation(); await api.chatDeleteConversation(projectId, id)
+    setConversations((items) => items.filter((c) => c.id !== id))
+    if (conversationId === id) { setConversationId(null); setMessages([]) }
+  }
+
+  const addFiles = async (event) => {
+    const files = [...(event.target.files || [])]
+    if (!files.length) return
+    setBusy(true)
+    try {
+      let id = conversationId
+      if (!id) { const convo = await api.chatNewConversation(projectId); id = convo.id; setConversationId(id) }
+      for (const file of files.slice(0, 10 - attachments.length)) {
+        const uploaded = await api.chatUpload(projectId, id, file)
+        setAttachments((items) => [...items, uploaded])
+      }
+    } catch (err) { toast.error(err) } finally { setBusy(false); event.target.value = '' }
+  }
+
+  const say = (text) => {
+    if (!speakingRef.current || !window.speechSynthesis) return
+    const plain = String(text || '').replace(/\*\*/g, '').trim()
+    if (!plain) return
+    window.speechSynthesis.cancel()
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(plain))
+  }
+
+  const BRANCHES = { planner: 'Planner', retrieval: 'Retrieval', tools: 'Tools' }
+  const [activity, setActivity] = useState(null) // { planner|retrieval|tools: {status, summary}, judge }
+
+  const pushAssistant = (res) => {
+    setMessages((m) => [...m, { role: 'assistant', text: res.reply, action: res.action, data: res.data, mutation: res.mutation, evidence: res.evidence }])
+    say(res.reply)
+  }
 
   const send = async (text) => {
     const message = (text ?? input).trim()
     if (!message || busy) return
+    // Recent turns give the interpreter context for follow-up answers.
+    const history = messages.slice(-8).map((m) => ({ role: m.role, text: String(m.text || '') }))
     setInput('')
     setMessages((m) => [...m, { role: 'user', text: message }])
     setBusy(true)
+    setActivity({ planner: { status: 'running' }, retrieval: { status: 'running' }, tools: { status: 'running' }, judge: null })
+    let done = false
     try {
-      const res = await api.chat(projectId, message)
-      setMessages((m) => [...m, { role: 'assistant', text: res.reply, action: res.action, data: res.data, mutation: res.mutation }])
+      // Concurrent-agent stream: branch partials land as they complete.
+      const handleEvent = (event, data) => {
+        if (event === 'branch') {
+          const summary = data.branch === 'planner' ? `interpreted: ${data.plan?.action || '…'}`
+            : data.branch === 'retrieval' ? (data.facts?.summary || 'model facts collected')
+            : (data.tool_runs?.summary || 'tools ran')
+          setActivity((a) => a && { ...a, [data.branch]: { status: 'done', summary } })
+        } else if (event === 'judge') {
+          setActivity((a) => a && { ...a, judge: data })
+        } else if (event === 'result') {
+          done = true
+          setConversationId(data.conversation_id)
+          setAttachments([])
+          pushAssistant(data)
+        } else if (event === 'error') {
+          done = true
+          setMessages((m) => [...m, { role: 'assistant', text: data.message, error: true }])
+          say(data.message)
+        }
+      }
+      if (conversationId || attachments.length) {
+        await api.chatStream(projectId, message, history, handleEvent, undefined, conversationId, attachments.map((a) => a.id))
+      } else {
+        await api.chatStream(projectId, message, history, handleEvent)
+      }
+      if (!done) throw new Error('The assistant stream ended unexpectedly.')
     } catch (err) {
-      setMessages((m) => [...m, { role: 'assistant', text: String(err.message || err), error: true }])
-    } finally { setBusy(false) }
+      if (!done) {
+        // Streaming unavailable — fall back to the plain endpoint.
+        try {
+          const result = conversationId || attachments.length
+            ? await api.chat(projectId, message, history, conversationId, attachments.map((a) => a.id))
+            : await api.chat(projectId, message, history)
+          setConversationId(result.conversation_id); setAttachments([]); pushAssistant(result)
+        }
+        catch (inner) {
+          setMessages((m) => [...m, { role: 'assistant', text: String(inner.message || inner), error: true }])
+          say(String(inner.message || inner))
+        }
+      }
+    } finally { setBusy(false); setActivity(null) }
+  }
+
+  const toggleMic = () => {
+    if (listening) { recognition.current?.stop(); return }
+    const rec = new SpeechRec()
+    rec.lang = navigator.language || 'en-US'
+    rec.interimResults = false
+    rec.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript || ''
+      if (transcript.trim()) send(transcript)
+    }
+    rec.onend = () => setListening(false)
+    rec.onerror = () => { setListening(false); toast.error('Voice input failed — check the microphone permission.') }
+    recognition.current = rec
+    setListening(true)
+    rec.start()
   }
 
   const apply = async (mutation, index) => {
@@ -44,8 +171,9 @@ export default function ChatDock({ projectId, onChanged }) {
     try {
       const res = await api.chatApply(projectId, mutation)
       setMessages((m) => m.map((msg, i) => i === index ? { ...msg, mutation: null, applied: true } : msg))
-      setMessages((m) => [...m, { role: 'assistant', text: res.reply, applied: true }])
+      setMessages((m) => [...m, { role: 'assistant', text: res.reply, applied: true, result: res.result }])
       toast.success(res.reply)
+      say(res.reply)
       onChanged?.()
     } catch (err) { toast.error(err) } finally { setBusy(false) }
   }
@@ -60,18 +188,46 @@ export default function ChatDock({ projectId, onChanged }) {
         </button>
       )}
       {open && (
-        <div className="chatdock" role="dialog" aria-label="Assistant">
+        <div className={`chatdock mode-${mode}`} role="dialog" aria-label="Assistant">
           <header className="chatdock-head">
             <span className="chatdock-title"><Bot size={17} /> Assistant</span>
+            <button className="m3-icon-btn" onClick={newChat} aria-label="New chat" title="New chat"><Plus size={16} /></button>
+            <button className="m3-icon-btn" onClick={() => setShowHistory((value) => !value)} aria-label="Chat history" title="Chat history"><History size={16} /></button>
+            <button className="m3-icon-btn" onClick={() => setSpeaking((s) => !s)}
+              aria-label={speaking ? 'Turn off spoken replies' : 'Read replies aloud'}
+              title={speaking ? 'Spoken replies on' : 'Read replies aloud'}>
+              {speaking ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
+            <button className="m3-icon-btn" onClick={() => setMode(mode === 'docked' ? 'float' : 'docked')}
+              aria-label={mode === 'docked' ? 'Undock assistant' : 'Dock assistant to the side'}
+              title={mode === 'docked' ? 'Undock' : 'Dock to the side'}>
+              {mode === 'docked' ? <PanelRightClose size={16} /> : <PanelRight size={16} />}</button>
+            <button className="m3-icon-btn" onClick={() => setMode(mode === 'max' ? 'float' : 'max')}
+              aria-label={mode === 'max' ? 'Restore assistant size' : 'Maximize assistant'}
+              title={mode === 'max' ? 'Restore' : 'Maximize'}>
+              {mode === 'max' ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
             <button className="m3-icon-btn" onClick={() => setOpen(false)} aria-label="Close assistant"><X size={17} /></button>
           </header>
 
+          {showHistory && <aside className="chatdock-history">
+            <div className="chatdock-history-head"><strong>Recent chats</strong><button className="m3-btn text small" onClick={newChat}><Plus size={14} /> New</button></div>
+            {conversations.length === 0 && <p>No saved chats yet.</p>}
+            {conversations.map((c) => <button key={c.id} className={c.id === conversationId ? 'active' : ''} onClick={() => openConversation(c.id)}>
+              <span><strong>{c.title}</strong><small>{c.message_count} messages · {new Date(c.updated_at).toLocaleString()}</small></span>
+              <Trash2 size={14} onClick={(event) => removeConversation(event, c.id)} aria-label="Delete chat" />
+            </button>)}
+          </aside>}
+
           <div className="chatdock-body" ref={scroller}>
+            {messages.length === 0 && <div className="chatdock-empty"><MessageSquare size={32} /><h3>How can I help?</h3><p>Ask about this project, generate code, research the web, review a file, or propose an application change.</p></div>}
             {messages.map((m, i) => (
               <div key={i} className={`chatdock-msg ${m.role}`}>
                 <div className={`chatdock-bubble${m.error ? ' error' : ''}${m.applied ? ' applied' : ''}`}>
                   <RichText text={m.text} />
-                  {m.data && <DataView action={m.action} data={m.data} />}
+                  {m.data && <DataView action={m.action} data={m.data} onOpen={onOpenElement} />}
+                  {m.applied && m.result?.id && m.result?.level && onOpenElement && (
+                    <button className="chatdock-link chatdock-open" onClick={() => onOpenElement(m.result)}>
+                      <ArrowUpRight size={13} /> Open “{m.result.name}”</button>
+                  )}
                   {m.mutation && (
                     <div className="chatdock-propose">
                       <div className="chatdock-propose-head"><Sparkles size={13} /> Proposed change</div>
@@ -85,10 +241,24 @@ export default function ChatDock({ projectId, onChanged }) {
                     </div>
                   )}
                   {m.dismissed && <p className="chatdock-note">Dismissed.</p>}
+                  {m.evidence && <details className="chatdock-evidence">
+                    <summary>Agent evidence</summary>
+                    {m.evidence.retrieval?.summary && <p><strong>Model:</strong> {m.evidence.retrieval.summary}</p>}
+                    {(m.evidence.tools || []).map((call, j) => <p key={j}><strong>{call.tool}:</strong> {call.summary}</p>)}
+                    {m.evidence.verdict && <p><strong>Judge:</strong> {m.evidence.verdict.reason}</p>}
+                  </details>}
                 </div>
               </div>
             ))}
-            {busy && <div className="chatdock-msg assistant"><div className="chatdock-bubble chatdock-typing"><span></span><span></span><span></span></div></div>}
+            {activity && <div className="chatdock-msg assistant"><div className="chatdock-bubble chatdock-activity" aria-label="Agent activity">
+              {Object.entries(BRANCHES).map(([key, label]) => <div key={key} className={`chatdock-branch ${activity[key]?.status || 'running'}`}>
+                <span className="chatdock-branch-dot" aria-hidden="true" />
+                <strong>{label}</strong>
+                <span>{activity[key]?.status === 'done' ? activity[key].summary : 'working…'}</span>
+              </div>)}
+              {activity.judge && <div className="chatdock-branch judge done"><span className="chatdock-branch-dot" aria-hidden="true" /><strong>Judge</strong><span>{activity.judge.reason}</span></div>}
+            </div></div>}
+            {busy && !activity && <div className="chatdock-msg assistant"><div className="chatdock-bubble chatdock-typing"><span></span><span></span><span></span></div></div>}
           </div>
 
           {messages.length <= 1 && (
@@ -98,8 +268,17 @@ export default function ChatDock({ projectId, onChanged }) {
           )}
 
           <div className="chatdock-input">
-            <input value={input} placeholder="Ask or instruct…" disabled={busy}
+            <input ref={fileInput} type="file" multiple hidden onChange={addFiles} />
+            <button className="m3-icon-btn" onClick={() => fileInput.current?.click()} disabled={busy} aria-label="Add files" title="Add files"><Paperclip size={16} /></button>
+            {SpeechRec && <button className={`m3-icon-btn chatdock-mic${listening ? ' listening' : ''}`}
+              onClick={toggleMic} disabled={busy}
+              aria-label={listening ? 'Stop listening' : 'Speak your request'}
+              title={listening ? 'Listening… click to stop' : 'Speak your request'}><Mic size={16} /></button>}
+            <div className="chatdock-compose">
+            {attachments.length > 0 && <div className="chatdock-files">{attachments.map((a) => <span key={a.id}>{a.filename}<button onClick={() => setAttachments((items) => items.filter((x) => x.id !== a.id))}>×</button></span>)}</div>}
+            <input value={input} placeholder={listening ? 'Listening…' : 'Ask or instruct…'} disabled={busy}
               onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send() }} />
+            </div>
             <button className="m3-btn filled small" disabled={busy || !input.trim()} onClick={() => send()} aria-label="Send"><Send size={15} /></button>
           </div>
         </div>
@@ -108,23 +287,27 @@ export default function ChatDock({ projectId, onChanged }) {
   )
 }
 
-// Minimal **bold** renderer for chat bubbles (avoids pulling in a full markdown lib).
 function RichText({ text }) {
-  const parts = String(text || '').split(/(\*\*[^*]+\*\*)/g)
-  return <p className="chatdock-text">{parts.map((p, i) => p.startsWith('**') && p.endsWith('**')
-    ? <strong key={i}>{p.slice(2, -2)}</strong>
-    : <span key={i}>{p}</span>)}</p>
+  return <div className="chatdock-text"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+    a: ({ ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+  }}>{String(text || '')}</ReactMarkdown></div>
 }
 
-function DataView({ action, data }) {
+function DataView({ action, data, onOpen }) {
   if (action === 'list' && data.items) {
     if (data.items.length === 0) return null
     return <ul className="chatdock-list">{data.items.slice(0, 12).map((it, i) => (
-      <li key={i}><span className="chatdock-lvl">{it.level}</span> {it.name} <em>{it.status}</em></li>
+      <li key={i}><span className="chatdock-lvl">{it.level}</span>
+        {it.id && onOpen
+          ? <button className="chatdock-link" title={`Open ${it.name} in its ${it.level} workspace`}
+              onClick={() => onOpen(it)}>{it.name}</button>
+          : <span>{it.name}</span>} <em>{it.status}</em></li>
     ))}{data.items.length > 12 && <li>…and {data.items.length - 12} more</li>}</ul>
   }
   if ((action === 'readiness' || action === 'overview') && typeof data.score === 'number') {
-    return <div className="chatdock-score"><strong>{data.score}%</strong> {data.status_label}</div>
+    return <div className="chatdock-score"><strong>{data.score}%</strong> {data.status_label}
+      {data.id && data.level && onOpen && <button className="chatdock-link" title={`Open ${data.name} in its ${data.level} workspace`}
+        onClick={() => onOpen(data)}><ArrowUpRight size={12} /> open workspace</button>}</div>
   }
   if (action === 'overview' && Array.isArray(data.levels)) {
     return <div className="chatdock-levels">{data.levels.map((l) => (

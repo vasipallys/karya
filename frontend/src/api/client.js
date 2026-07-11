@@ -148,6 +148,7 @@ export const api = {
   deleteDiagram: (id, diagramId) => jsonRequest(`/projects/${id}/l1/diagrams/${diagramId}`, { method: 'DELETE' }),
   generateDiagram: (id, elementId, payload) => json(`/projects/${id}/l1/${elementId}/diagrams/generate`, 'POST', payload),
   assistDiagram: (id, elementId, payload) => json(`/projects/${id}/l1/${elementId}/diagrams/assist`, 'POST', payload),
+  assistProjectDiagram: (id, payload) => json(`/projects/${id}/ai/diagram`, 'POST', payload),
   listRequirements: (id, elementId) => jsonRequest(`/projects/${id}/l1/${elementId}/requirements`),
   createRequirement: (id, elementId, payload) => json(`/projects/${id}/l1/${elementId}/requirements`, 'POST', payload),
   getRequirement: (id, documentId) => jsonRequest(`/projects/${id}/l1/requirements/${documentId}`),
@@ -304,8 +305,19 @@ export const api = {
   workflowGuide: (id) => jsonRequest(`/projects/${id}/workflow`),
 
   // Conversational assistant
-  chat: (id, message) => json(`/projects/${id}/chat`, 'POST', { message }),
+  chat: (id, message, history = [], conversationId = null, attachmentIds = []) =>
+    json(`/projects/${id}/chat`, 'POST', { message, history, conversation_id: conversationId, attachment_ids: attachmentIds }),
+  chatStream: (id, message, history, onEvent, signal, conversationId = null, attachmentIds = []) =>
+    consumeSSE(`/projects/${id}/chat/stream`, { message, history, conversation_id: conversationId, attachment_ids: attachmentIds }, onEvent, signal),
   chatApply: (id, mutation) => json(`/projects/${id}/chat/apply`, 'POST', { mutation }),
+  chatConversations: (id) => jsonRequest(`/projects/${id}/chat/conversations`),
+  chatConversation: (id, conversationId) => jsonRequest(`/projects/${id}/chat/conversations/${conversationId}`),
+  chatNewConversation: (id) => json(`/projects/${id}/chat/conversations`, 'POST', {}),
+  chatDeleteConversation: (id, conversationId) => jsonRequest(`/projects/${id}/chat/conversations/${conversationId}`, { method: 'DELETE' }),
+  chatUpload: (id, conversationId, file) => {
+    const body = new FormData(); body.append('file', file)
+    return jsonRequest(`/projects/${id}/chat/conversations/${conversationId}/attachments`, { method: 'POST', body })
+  },
 
   // Integration connector configuration
   integrationConfig: (key) => jsonRequest(`/integrations/${key}/config`),

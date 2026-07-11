@@ -1,20 +1,12 @@
 import { Maximize2, Scan, X, ZoomIn, ZoomOut } from 'lucide-react'
-import mermaid from 'mermaid'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { renderMermaid } from './mermaidRuntime'
 
 // Shared Mermaid preview used everywhere in the app: auto-fits the diagram to
 // its container and offers a maximize popup with zoom + pan. Keeping this in one
 // place makes the preview behaviour consistent across markdown, the diagram
 // studio, and the L1 architecture views.
-mermaid.initialize({
-  startOnLoad: false, securityLevel: 'strict', theme: 'base',
-  themeVariables: {
-    primaryColor: '#d3e3fd', primaryTextColor: '#1f1f1f', primaryBorderColor: '#0b57d0',
-    lineColor: '#5f6368', secondaryColor: '#e6f4ea', tertiaryColor: '#fef7e0', fontFamily: 'Roboto, sans-serif',
-  },
-})
-
 let seq = 0
 
 function useMermaidSvg(source, delay = 150) {
@@ -25,7 +17,7 @@ function useMermaidSvg(source, delay = 150) {
     const timer = setTimeout(async () => {
       try {
         const id = `mv-${Date.now()}-${(seq += 1)}`
-        const { svg: rendered } = await mermaid.render(id, source || 'graph TD; Empty;')
+        const { svg: rendered } = await renderMermaid(source || 'graph TD; Empty;', id)
         if (active) { setSvg(rendered); setError(null) }
       } catch (nextError) {
         if (active) setError(nextError)

@@ -115,9 +115,14 @@ export default function ProjectWorkspace({ projectId, config, notice, requestedT
   const [project, setProject] = useState(null)
   const [error, setError] = useState(null)
   const [wizard, setWizard] = useState(false)
+  // Bumped whenever something outside a tab (chat assistant apply) mutates the
+  // C4 model, so graph-holding tabs refetch instead of showing stale data.
+  const [graphVersion, setGraphVersion] = useState(0)
 
   const refresh = useCallback(() => api.getProject(projectId).then(setProject).catch(setError), [projectId])
   useEffect(() => { refresh() }, [refresh])
+
+  const modelChanged = useCallback(() => { refresh(); setGraphVersion((version) => version + 1) }, [refresh])
 
   // Global Ask-AI (and other shell-level) tab requests; token object so
   // repeated identical requests still retrigger.
@@ -154,17 +159,17 @@ export default function ProjectWorkspace({ projectId, config, notice, requestedT
       </div>
       {wizard && <WorkflowWizard projectId={projectId} onNavigate={setTab} onClose={() => setWizard(false)} />}
       {notice && tab === 'canvas' && <div className="m3-banner info">{notice}</div>}
-      {tab === 'canvas' && <C4Canvas projectId={projectId} config={config}
+      {tab === 'canvas' && <C4Canvas projectId={projectId} config={config} reloadToken={graphVersion}
         onOpenL1Plan={(elementId) => { setPlanningL1Id(elementId); setTab('planning') }} />}
-      {tab === 'planning' && <L1Planning projectId={projectId} requestedL1Id={planningL1Id}
+      {tab === 'planning' && <L1Planning projectId={projectId} requestedL1Id={planningL1Id} reloadToken={graphVersion}
         onL1Change={setPlanningL1Id} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} />}
-      {tab === 'l2arch' && <Suspense fallback={<p className="l1-loading">Loading L2 workspace…</p>}><L2Architecture projectId={projectId} requestedId={l2Target} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
-      {tab === 'l3arch' && <Suspense fallback={<p className="l1-loading">Loading L3 workspace…</p>}><L3Architecture projectId={projectId} requestedId={l3Target} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
-      {tab === 'l4arch' && <Suspense fallback={<p className="l1-loading">Loading L4 workspace…</p>}><L4Architecture projectId={projectId} requestedId={l4Target} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
-      {tab === 'rollup' && <RollupDashboard projectId={projectId} onNavigate={openElement} />}
+      {tab === 'l2arch' && <Suspense fallback={<p className="l1-loading">Loading L2 workspace…</p>}><L2Architecture projectId={projectId} requestedId={l2Target} reloadToken={graphVersion} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
+      {tab === 'l3arch' && <Suspense fallback={<p className="l1-loading">Loading L3 workspace…</p>}><L3Architecture projectId={projectId} requestedId={l3Target} reloadToken={graphVersion} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
+      {tab === 'l4arch' && <Suspense fallback={<p className="l1-loading">Loading L4 workspace…</p>}><L4Architecture projectId={projectId} requestedId={l4Target} reloadToken={graphVersion} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
+      {tab === 'rollup' && <RollupDashboard projectId={projectId} onNavigate={openElement} reloadToken={graphVersion} />}
       {tab === 'quick' && <QuickEstimate config={config} />}
       {tab === 'overview' && <Overview project={project} config={config} onChanged={refresh} />}
     </div>
-    <ChatDock projectId={projectId} onChanged={refresh} />
+    <ChatDock projectId={projectId} onChanged={modelChanged} onOpenElement={openElement} />
   </div>
 }

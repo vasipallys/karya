@@ -1,7 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { api } from '../api/client'
+import { ToastProvider } from '../ui/Toast'
 import RequirementsPlanning from './RequirementsPlanning'
+
+const render = (ui) => rtlRender(<ToastProvider>{ui}</ToastProvider>)
 
 vi.mock('../api/client', () => ({
   api: {

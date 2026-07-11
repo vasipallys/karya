@@ -1,10 +1,12 @@
-import { Boxes, CheckCircle2, Circle, FileText, Gavel, GitBranch, Grid3x3, Layers, Network, Pencil, PencilRuler, Plug, Puzzle, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
+import { Boxes, CheckCircle2, Circle, FileText, Gavel, GitBranch, Grid3x3, Layers, Network, Pencil, Plug, Puzzle, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import AiAssist from '../components/AiAssist'
+import FlowForward from '../components/FlowForward'
 import LevelBreadcrumb from '../components/LevelBreadcrumb'
 import { MarkdownViewer } from '../components/MarkdownEditor'
 import MermaidView from '../components/MermaidView'
+import MermaidWorkbench from '../components/MermaidWorkbench'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
 
@@ -82,7 +84,7 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'gap', 'restricted'].includes(v) ? 'sub-partiallyallocated' : ['low', 'implemented', 'active', 'provided'].includes(v) ? 'ok' : ''}`
 
-export default function L3Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement }) {
+export default function L3Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement, reloadToken }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
   const [allElements, setAllElements] = useState([])
@@ -101,7 +103,7 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
 
   const fail = (err) => { setError(err); toast.error(err) }
 
-  useEffect(() => {
+  const loadGraph = useCallback(() => {
     api.c4Graph(projectId).then((g) => {
       const l3s = g.elements.filter((e) => e.level === 'L3')
       setElements(l3s)
@@ -109,6 +111,7 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
       setL3Id((cur) => cur && l3s.some((e) => e.id === cur) ? cur : (l3s[0]?.id || ''))
     }).catch(fail)
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadGraph() }, [loadGraph, reloadToken])
 
   const load = useCallback(() => {
     if (!l3Id) return
@@ -185,6 +188,14 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
           <LevelBreadcrumb elements={allElements} elementId={l3Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
+        <FlowForward projectId={projectId} elementId={l3Id} label="AI: draft tasks" childLabel="tasks (L4)"
+          disabled={!l3Id} onApplied={loadGraph}
+          guidance={() => [
+            ws?.element?.name ? `Story: ${ws.element.name}` : '',
+            summary ? `Summary: ${summary}` : '',
+            ws?.components?.length ? `Components: ${ws.components.map((c) => c.name).join(', ')}` : '',
+            ws?.interfaces?.length ? `Interfaces: ${ws.interfaces.map((i) => i.name).join(', ')}` : '',
+          ].filter(Boolean).join('\n')} />
         <button className="m3-btn tonal small" onClick={runAi} disabled={ai?.loading}><Sparkles size={15} /> {ai?.loading ? 'Drafting…' : 'AI generate L3'}</button>
         <button className="m3-icon-btn" onClick={load} aria-label="Refresh"><Network size={17} /></button>
       </div>
@@ -207,18 +218,12 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
             ].filter(Boolean).join('\n')}
             onResult={setSummary} /></div>
         <textarea className="vision-field-summary" rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One-paragraph L3 component summary" />
-        <div className="l1arch-section-head"><h3>Component diagram <small>Mermaid — portable & reviewable</small></h3>
-          <div className="l1arch-export-actions">
-            <button className="m3-btn outlined small" onClick={() => setStudio(true)}><PencilRuler size={14} /> Open studio</button>
-            <button className="m3-btn filled small" disabled={busy} onClick={() => saveArch({ summary, component_diagram: diagram })}>Save</button>
-          </div>
-        </div>
-        <div className="l2-diagram-grid">
-          <div className="l2-diagram-code"><header>Mermaid source</header>
-            <textarea spellCheck="false" value={diagram} onChange={(e) => setDiagram(e.target.value)} placeholder={'flowchart TB\n  Controller --> Service\n  Service --> Repository'} /></div>
-          <div className="l2-diagram-preview"><header>Live preview</header>
-            {diagram.trim() ? <MermaidView source={diagram} /> : <p className="l1-node-empty">Write Mermaid or use “AI generate L3”.</p>}</div>
-        </div>
+        <div className="l1arch-section-head"><h3>Component diagram <small>Mermaid — portable & reviewable</small></h3></div>
+        <MermaidWorkbench projectId={projectId} source={diagram} onChange={setDiagram} saving={busy}
+          title="Component diagram" diagramType="architecture" onOpenStudio={() => setStudio(true)}
+          onSave={() => saveArch({ summary, component_diagram: diagram })}
+          placeholder={'flowchart TB\n  Controller --> Service\n  Service --> Repository'}
+          aiContext={[ws.element.name, summary, ...ws.components.map((item) => item.name), ...ws.interfaces.map((item) => item.name)].filter(Boolean).join('\n')} />
         <div className="l1arch-section-head"><h3>Component status</h3></div>
         <div className="l1-form-grid">
           <label className="m3-field"><span>Lifecycle status</span>

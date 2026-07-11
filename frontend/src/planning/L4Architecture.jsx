@@ -1,10 +1,12 @@
-import { CheckCircle2, CheckSquare, Circle, Code2, FileText, FlaskConical, GitBranch, ListChecks, Network, Pencil, PencilRuler, Plus, Sparkles, Square, Trash2 } from 'lucide-react'
+import { CheckCircle2, CheckSquare, Circle, ClipboardCopy, Code2, Download, FileText, FlaskConical, GitBranch, ListChecks, Network, Pencil, Plus, Sparkles, Square, Trash2 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import AiAssist from '../components/AiAssist'
 import LevelBreadcrumb from '../components/LevelBreadcrumb'
 import { MarkdownViewer } from '../components/MarkdownEditor'
+import { buildDevHandoff, handoffFilename } from './devHandoff'
 import MermaidView from '../components/MermaidView'
+import MermaidWorkbench from '../components/MermaidWorkbench'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
 
@@ -54,7 +56,7 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'failing', 'todo'].includes(v) ? 'sub-partiallyallocated' : ['low', 'passing', 'done'].includes(v) ? 'ok' : ''}`
 
-export default function L4Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement }) {
+export default function L4Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement, reloadToken }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
   const [allElements, setAllElements] = useState([])
@@ -80,7 +82,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
       setAllElements(g.elements)
       setL4Id((cur) => cur && l4s.some((e) => e.id === cur) ? cur : (l4s[0]?.id || ''))
     }).catch(fail)
-  }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId, reloadToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(() => {
     if (!l4Id) return
@@ -150,6 +152,16 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
           <LevelBreadcrumb elements={allElements} elementId={l4Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
+        <button className="m3-btn tonal small" disabled={!ws} title="Copy a self-contained implementation brief for a coding agent or ticket"
+          onClick={() => { navigator.clipboard?.writeText(buildDevHandoff(ws)); toast.success('Dev handoff copied — paste it into your coding agent or ticket') }}>
+          <ClipboardCopy size={14} /> Copy dev handoff</button>
+        <button className="m3-btn text small" disabled={!ws} aria-label="Download dev handoff"
+          onClick={() => {
+            const blob = new Blob([buildDevHandoff(ws)], { type: 'text/markdown' })
+            const url = URL.createObjectURL(blob)
+            const anchor = document.createElement('a'); anchor.href = url; anchor.download = handoffFilename(ws.element.name); anchor.click()
+            URL.revokeObjectURL(url)
+          }}><Download size={14} /> .md</button>
         <button className="m3-btn tonal small" onClick={runAi} disabled={ai?.loading}><Sparkles size={15} /> {ai?.loading ? 'Drafting…' : 'AI generate L4'}</button>
         <button className="m3-icon-btn" onClick={load} aria-label="Refresh"><Network size={17} /></button>
       </div>
@@ -171,18 +183,12 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
             ].filter(Boolean).join('\n')}
             onResult={setSummary} /></div>
         <textarea className="vision-field-summary" rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One-paragraph implementation summary" />
-        <div className="l1arch-section-head"><h3>Implementation diagram <small>Mermaid class / sequence diagram</small></h3>
-          <div className="l1arch-export-actions">
-            <button className="m3-btn outlined small" onClick={() => setStudio(true)}><PencilRuler size={14} /> Open studio</button>
-            <button className="m3-btn filled small" disabled={busy} onClick={() => saveArch({ summary, code_diagram: diagram })}>Save</button>
-          </div>
-        </div>
-        <div className="l2-diagram-grid">
-          <div className="l2-diagram-code"><header>Mermaid source</header>
-            <textarea spellCheck="false" value={diagram} onChange={(e) => setDiagram(e.target.value)} placeholder={'classDiagram\n  class Controller {\n    +create(req)\n  }'} /></div>
-          <div className="l2-diagram-preview"><header>Live preview</header>
-            {diagram.trim() ? <MermaidView source={diagram} /> : <p className="l1-node-empty">Write Mermaid or use “AI generate L4”.</p>}</div>
-        </div>
+        <div className="l1arch-section-head"><h3>Implementation diagram <small>Mermaid class / sequence diagram</small></h3></div>
+        <MermaidWorkbench projectId={projectId} source={diagram} onChange={setDiagram} saving={busy}
+          title="Implementation diagram" diagramType="class" onOpenStudio={() => setStudio(true)}
+          onSave={() => saveArch({ summary, code_diagram: diagram })}
+          placeholder={'classDiagram\n  class Controller {\n    +create(req)\n  }'}
+          aiContext={[ws.element.name, summary, ...ws.code_units.map((item) => item.name), ...ws.test_cases.map((item) => item.name)].filter(Boolean).join('\n')} />
         <div className="l1arch-section-head"><h3>Task status</h3></div>
         <div className="l1-form-grid">
           <label className="m3-field"><span>Lifecycle status</span>

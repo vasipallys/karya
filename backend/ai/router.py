@@ -15,6 +15,8 @@ from backend.l2arch import store as l2_store
 from backend.l3arch import store as l3_store
 from backend.l4arch import store as l4_store
 from backend.planning import store as planning_store
+from backend.planning import diagram_ai
+from backend.planning.models import DiagramAssistRequest
 from backend.projects.store import NotFoundError
 from backend.reporting import service as reporting_service
 
@@ -36,6 +38,24 @@ def _guard(operation: Any) -> Any:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
     except _VALIDATION_ERRORS as exc:
         raise HTTPException(status_code=400, detail={"code": "invalid", "message": str(exc)}) from exc
+
+
+@router.post("/projects/{project_id}/ai/diagram")
+async def assist_project_diagram(project_id: str, payload: DiagramAssistRequest, request: Request) -> dict[str, str]:
+    """Shared diagram assistant for every architecture level and editor surface."""
+    require_llm_config(request)
+    _guard(lambda: c4_store.list_graph(project_id))
+    try:
+        return await diagram_ai.assist_diagram(
+            prompt=payload.prompt,
+            diagram_type=payload.diagram_type,
+            current_source=payload.current_source,
+            history=[turn.model_dump() for turn in payload.history],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail={
+            "code": "diagram_ai_error", "message": str(exc)[:400], "retryable": True,
+        }) from exc
 
 
 # ---- request bodies -----------------------------------------------------

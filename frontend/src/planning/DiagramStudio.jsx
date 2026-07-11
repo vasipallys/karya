@@ -22,13 +22,10 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import mermaid from 'mermaid'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MermaidView from '../components/MermaidView'
 import { DIAGRAM_TYPE_GROUPS, DIAGRAM_TYPES, getDiagramType } from './diagramCatalog'
 import { DIRECTIONS, EDGE_TYPES, modelToMermaid, NODE_SHAPES, nextNodeId, parseFlowchart } from './mermaidModel'
-
-mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base', themeVariables: { primaryColor: '#d3e3fd', primaryTextColor: '#1f1f1f', primaryBorderColor: '#0b57d0', lineColor: '#5f6368', secondaryColor: '#e6f4ea', tertiaryColor: '#fef7e0', fontFamily: 'Roboto, sans-serif' } })
 
 const EDGE_STROKE = { arrow: '#5f6368', open: '#5f6368', dotted: '#5f6368', thick: '#0b57d0' }
 
