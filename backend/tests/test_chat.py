@@ -15,6 +15,8 @@ from backend.c4.models import C4ElementCreate
 from backend.projects.models import ProjectCreate
 from backend.projects.store import create_project
 from backend.storage import db
+from backend.config import get_settings
+from backend.llm.factory import get_llm
 
 
 @pytest.fixture
@@ -28,8 +30,14 @@ def work_dir():
 def isolated_db(work_dir, monkeypatch):
     monkeypatch.setenv("KARYA_DB", str(work_dir / "test.db"))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setenv("LLM_MODEL", "mock")
+    monkeypatch.setenv("LLM_API_KEY", "")
+    get_settings.cache_clear()
+    get_llm.cache_clear()
     db._initialized.clear()
     yield
+    get_settings.cache_clear()
+    get_llm.cache_clear()
 
 
 def _scope():
@@ -250,3 +258,19 @@ def test_text_attachment_is_saved_and_linked_to_message():
         assert response.status_code == 200
         loaded = client.get(f"/projects/{pid}/chat/conversations/{conversation['id']}", headers=ADMIN).json()
         assert loaded["messages"][0]["attachments"][0]["filename"] == "notes.md"
+
+
+@pytest.mark.parametrize(("mode", "action"), [
+    ("chat", "answer"), ("code", "code"), ("research", "web_search"),
+    ("image", "image"), ("document", "document"),
+])
+def test_explicit_chat_modes_override_keyword_routing(mode, action):
+    pid, _, _ = _scope()
+    with TestClient(app) as client:
+        response = client.post(f"/projects/{pid}/chat", json={
+            "message": "create an L2 container called should-not-be-created",
+            "mode": mode,
+        }, headers=ADMIN)
+        assert response.status_code == 200
+        assert response.json()["action"] == action
+        assert response.json()["mutation"] is None

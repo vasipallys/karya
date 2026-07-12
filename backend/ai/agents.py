@@ -4,6 +4,7 @@ factory's structured output, and returns a *proposal* — nothing is persisted h
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -12,7 +13,7 @@ from backend.ai.masking import mask_pii
 from backend.ai.schemas import ChatCommand, C4Scaffold, FieldSummary, L1BaselineDraft, L2Draft, L3Draft, L4Draft, NarrativeOutput, OrchestratorPlan, StaffingProposal, StoryDecomposition
 from backend.c4 import store as c4_store
 from backend.graph.nodes import _parse_structured_result
-from backend.llm.factory import get_structured_llm
+from backend.llm.factory import get_llm, get_structured_llm, prefers_text_routing
 from backend.planning import store as planning_store
 from backend.resources import store as resources_store
 from backend.storage.db import connect
@@ -442,21 +443,26 @@ _CHAT_SYSTEM = (
     "update_element (name + new_name/status/description), delete_element (name), "
     "create_relation (name=source element, target=target element, optional label), "
     "web_search (current/external facts; put the search query in description), code (generate or explain code), "
-    "answer (general questions, attached-file analysis, product guidance), help, or none.\n"
+    "image (create an image prompt, visual specification, SVG, or Mermaid source), document (write, transform, or "
+    "review document content in Markdown), answer (general questions and product guidance), help, or none.\n"
     "The element name may be inline (“create an L2 payments container” → name payments). A compound request "
     "like “create X and route/connect it to Y” is ONE create_element with `target` set to Y (and an optional "
     "`label` like routes/calls/publishes) — the relation is created with the element.\n"
     "Use CONVERSATION so far to resolve follow-ups: if you previously asked for a missing detail (e.g. a name), "
     "interpret a short answer as that detail of the pending command.\n"
     "Resolve names against the PROJECT ELEMENTS list. For create/update/delete set the exact element name(s). "
-    "For answer/code, give a complete useful Markdown response grounded in the supplied project/file context. "
+    "REQUEST MODE is authoritative when it is not auto: chat→answer, code→code, research→web_search, "
+    "image→image, document→document. Do not reinterpret a forced mode as a workspace mutation. "
+    "For answer/code/image/document, give a complete useful Markdown response grounded in supplied context. "
+    "Image mode is text-only: produce an excellent generation prompt, SVG/Mermaid source, or visual spec; never "
+    "claim that a bitmap was generated or that image pixels were inspected. "
     "For web_search, do not invent results; set description to a focused query and let the search tool answer. "
     "Never invent elements that aren't in the list for reads."
 )
 
 
 async def interpret_chat(project_id: str, message: str, history: list[dict[str, str]] | None = None,
-                         attachment_context: str = "") -> ChatCommand:
+                         attachment_context: str = "", mode: str = "auto") -> ChatCommand:
     elements = c4_store.list_graph(project_id)["elements"]
     listing = "\n".join(f"- {e['level']} · {e['name']} ({e['status']})" for e in elements[:100]) or "(no elements yet)"
     convo = "\n".join(
@@ -464,13 +470,91 @@ async def interpret_chat(project_id: str, message: str, history: list[dict[str, 
         for turn in (history or [])[-8:] if str(turn.get('text') or '').strip()
     )
     human = (
-        f"PROJECT ELEMENTS:\n{listing}\n\n"
+        f"REQUEST MODE: {mode}\n\nPROJECT ELEMENTS:\n{listing}\n\n"
         + (f"CONVERSATION SO FAR:\n{convo}\n\n" if convo else "")
         + (f"ATTACHED FILE CONTENT:\n{mask_pii(attachment_context)}\n\n" if attachment_context else "")
         + f"USER MESSAGE:\n{mask_pii(message.strip())}\n\n"
         "Interpret into one command."
     )
-    return await _invoke(ChatCommand, _CHAT_SYSTEM, human)
+    if prefers_text_routing():
+        return await _interpret_local_chat(message, mode, elements, human)
+    command = await _invoke(ChatCommand, _CHAT_SYSTEM, human)
+    forced = {"chat": "answer", "code": "code", "research": "web_search",
+              "image": "image", "document": "document"}.get(mode)
+    if forced:
+        command.action = forced
+        if forced == "web_search":
+            command.description = command.description.strip() or message.strip()
+    return command
+
+
+async def _interpret_local_chat(message: str, mode: str, elements: list[dict], context: str) -> ChatCommand:
+    """Deterministic routing + free-form Gemma response, following Gemma Studio.
+
+    Gemma 3 1B should not be asked to serialize the large ChatCommand schema.
+    Recognizable project operations are routed without an LLM; open-ended modes
+    use Gemma only for the Markdown reply.
+    """
+    text = message.strip()
+    low = text.lower()
+    names = sorted((str(item["name"]) for item in elements), key=len, reverse=True)
+    found = next((name for name in names if name.lower() in low), "")
+    level_match = re.search(r"\bl([1-4])\b", low)
+    level = f"L{level_match.group(1)}" if level_match else ""
+    forced = {"chat": "answer", "code": "code", "research": "web_search",
+              "image": "image", "document": "document"}.get(mode)
+    if forced == "web_search":
+        return ChatCommand(action="web_search", description=text, reply="Searching the web.")
+    if forced:
+        return ChatCommand(action=forced, reply=await _local_markdown_reply(forced, context))
+
+    if re.search(r"\b(list|show|how many)\b", low):
+        return ChatCommand(action="list", level=level, reply="Here's what I found.")
+    if re.search(r"readiness|\bready\b|complete", low):
+        return ChatCommand(action="readiness", level=level, name=found, reply="Checking readiness.")
+    if re.search(r"next|what should|recommend|roll.?up|report|estimat", low):
+        return ChatCommand(action="report", reply="Here's the roll-up and next step.")
+    if re.search(r"overview|project status|progress|where am i", low):
+        return ChatCommand(action="overview", reply="Here's the project status.")
+    if re.search(r"\b(search|browse|internet|web|latest|current news)\b", low):
+        return ChatCommand(action="web_search", description=text, reply="Searching the web.")
+    rename = re.search(r"\brename\s+(.+?)\s+to\s+(.+?)[?.]*$", text, re.I)
+    if rename:
+        return ChatCommand(action="update_element", name=rename.group(1).strip(),
+                           new_name=rename.group(2).strip(), reply="Review this rename before applying.")
+    if re.search(r"\b(delete|remove)\b", low):
+        target = found or re.sub(r"^.*?\b(?:delete|remove)\b\s+", "", text, flags=re.I).rstrip("?.")
+        return ChatCommand(action="delete_element", name=target, reply="Review this deletion before applying.")
+    if re.search(r"\b(create|add)\b", low) and level:
+        named = re.search(r"(?:called|named)\s+(.+?)(?:\s+under\s+|[?.]*$)", text, re.I)
+        inline = re.search(r"\b(?:create|add)\b\s+(?:an?\s+)?l[1-4]\s+(.+?)\s+(?:container|component|task|story|system|element)\b", text, re.I)
+        name = (named or inline).group(1).strip() if (named or inline) else ""
+        parent_match = re.search(r"\bunder\s+(.+?)[?.]*$", text, re.I)
+        parent = parent_match.group(1).strip() if parent_match else ""
+        return ChatCommand(action="create_element", level=level, name=name, parent=parent,
+                           reply="Review this new element before applying.")
+    action = "code" if re.search(r"\b(code|function|class|script|implement|debug)\b", low) else "answer"
+    return ChatCommand(action=action, reply=await _local_markdown_reply(action, context))
+
+
+async def _local_markdown_reply(mode: str, context: str) -> str:
+    system = (
+        "You are Karya, a precise local assistant. Answer directly in Markdown. "
+        "Use only supplied project/file facts; distinguish evidence from inference."
+    )
+    if mode == "code":
+        system += " Produce production-quality code and mention correctness or security risks."
+    elif mode == "image":
+        system += " Produce a visual brief, image prompt, SVG, or Mermaid source; do not claim bitmap generation."
+    elif mode == "document":
+        system += " Write or review the requested document with clear headings."
+    answer_context = context.replace("\n\nInterpret into one command.", "\n\nAnswer the user request directly.")
+    raw = await get_llm().ainvoke(
+        [SystemMessage(content=system), HumanMessage(content=answer_context)],
+        max_new_tokens=256,
+    )
+    content = raw.content
+    return content if isinstance(content, str) else "\n".join(str(part) for part in content)
 
 
 # ---- Summarize detail → parent field ------------------------------------

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -16,6 +16,7 @@ from backend.chat import service
 from backend.chat import store as chat_store
 from backend.chat.graph import get_chat_graph
 from backend.projects.store import NotFoundError
+from backend.llm.local import LocalModelInferenceError, LocalModelLoadingError
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["chat"])
 
@@ -35,6 +36,7 @@ class ChatRequest(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
     conversation_id: str | None = None
     attachment_ids: list[str] = Field(default_factory=list, max_length=10)
+    mode: Literal["auto", "chat", "code", "research", "image", "document"] = "auto"
 
 
 class ChatApplyRequest(BaseModel):
@@ -115,7 +117,15 @@ async def chat(project_id: str, payload: ChatRequest, request: Request) -> dict[
     attachment_text, attachment_meta = chat_store.attachment_context(convo["id"], payload.attachment_ids)
     user_message = chat_store.add_message(convo["id"], "user", payload.message, {"attachments": attachment_meta})
     chat_store.attach_to_message(payload.attachment_ids, user_message["id"])
-    command = await agents.interpret_chat(project_id, payload.message, stored_history or payload.history, attachment_text)
+    try:
+        command = await agents.interpret_chat(project_id, payload.message, stored_history or payload.history,
+                                              attachment_text, payload.mode)
+    except LocalModelLoadingError as exc:
+        raise HTTPException(status_code=503, detail={"code": "model_loading", "message": str(exc)}) from exc
+    except LocalModelInferenceError as exc:
+        raise HTTPException(status_code=502, detail={"code": "local_inference_error", "message": str(exc)}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail={"code": "invalid_model_output", "message": str(exc)}) from exc
     result = _run(lambda: service.dispatch(project_id, command))
     chat_store.add_message(convo["id"], "assistant", result["reply"], result)
     return {**result, "conversation_id": convo["id"]}
@@ -135,7 +145,7 @@ async def chat_stream(project_id: str, payload: ChatRequest, request: Request) -
         attachment_text, attachment_meta = chat_store.attachment_context(convo["id"], payload.attachment_ids)
         user_message = chat_store.add_message(convo["id"], "user", payload.message, {"attachments": attachment_meta})
         chat_store.attach_to_message(payload.attachment_ids, user_message["id"])
-        state = {"project_id": project_id, "message": payload.message,
+        state = {"project_id": project_id, "message": payload.message, "mode": payload.mode,
                  "history": stored_history or payload.history, "attachment_context": attachment_text}
         try:
             async for update in get_chat_graph().astream(state, stream_mode="updates"):
@@ -148,8 +158,14 @@ async def chat_stream(project_id: str, payload: ChatRequest, request: Request) -
                         yield sse("judge", values["verdict"])
                     else:
                         yield sse("branch", {"branch": node, **values})
+        except LocalModelLoadingError as exc:
+            yield sse("error", {"code": "model_loading", "message": str(exc), "retryable": True})
+        except LocalModelInferenceError as exc:
+            yield sse("error", {"code": "local_inference_error", "message": str(exc), "retryable": False})
         except (service.ChatError, c4_store.C4ValidationError) as exc:
             yield sse("error", {"code": "chat_invalid", "message": str(exc), "retryable": False})
+        except ValueError as exc:
+            yield sse("error", {"code": "invalid_model_output", "message": str(exc), "retryable": True})
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

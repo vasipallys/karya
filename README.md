@@ -41,6 +41,16 @@ npm install
 Copy-Item frontend\.env.example frontend\.env
 ```
 
+To run a Hugging Face model inside the API process, install the optional local
+runtime after the base requirements:
+
+```powershell
+python -m pip install -r requirements-local.txt
+```
+
+See [Local Hugging Face LLM](docs/local-llm.md) for model access, GPU sizing,
+air-gapped caching, and desktop packaging.
+
 This repo is organized as a monorepo with separate API, web, and desktop projects. The root `package.json` orchestrates the workspace; project-specific Node dependencies live in `frontend/package.json` and `desktop/package.json`. See [docs/monorepo.md](docs/monorepo.md) for the boundary map.
 
 Edit `backend/.env`, then run API and web together from the repository root:
@@ -139,6 +149,28 @@ Markdown documents render fenced `mermaid` blocks as live preview cards with sou
 
 Non-flowchart Mermaid diagrams are preserved and edited in text mode with the same live SVG preview and syntax-error guardrails. Saving a non-flowchart diagram never round-trips it through the flowchart model, so source for sequence, kanban, C4, chart, and beta diagrams stays intact. AI generation and assistant edits receive the selected diagram type, a matching starter header, and type-specific guidance; `LLM_PROVIDER=mock` returns deterministic starter diagrams for the expanded catalog.
 
+## Multimode assistant
+
+Every platform has a persistent, stream-enabled assistant with conversation
+history, file attachments, optional speech input/read-aloud, and floating,
+docked, or maximized layouts. The composer provides explicit modes:
+
+- **Auto** routes project queries, reports, readiness checks, and proposed C4
+  mutations from natural language.
+- **Chat** forces a general answer and cannot accidentally become a model write.
+- **Code** generates, explains, or reviews code.
+- **Research** performs public web search and returns linked sources.
+- **Image** produces visual briefs, image-generation prompts, SVG, or Mermaid.
+  Gemma 3 1B is text-only, so this mode does not claim bitmap generation or
+  pixel-level image inspection.
+- **Document** writes, transforms, or reviews Markdown and attached text, code,
+  CSV/Excel, Word, or image metadata.
+
+Workspace mutations remain proposal-first: the user must select **Apply**, and
+backend RBAC still enforces edit capability. Explicit non-Auto modes are enforced
+after intent interpretation so Code, Research, Image, and Document requests
+cannot be misrouted into a C4 mutation.
+
 ## Provider switches
 
 Only `backend/.env` changes. Provider and model strings do not appear in application code outside `backend/llm/factory.py`.
@@ -152,6 +184,43 @@ LLM_API_KEY=
 ```
 
 Mock mode returns deterministic, schema-valid estimates derived from a hash of the story title (same story → same points; a 13 exercises the spike/split branch and split proposals). It also returns deterministic Mermaid assistant drafts for the expanded diagram catalog, so Diagram Studio demos work offline. Every output is clearly labeled "Mock". Use it for demos, UI development, and trying the C4 workspace without a provider account or rate limits.
+
+**Local Hugging Face / Gemma 3**
+
+Install `requirements-local.txt`, accept the model license on Hugging Face, then
+configure:
+
+```dotenv
+LLM_PROVIDER=local
+LLM_MODEL=google/gemma-3-1b-it
+LLM_API_KEY=hf_optional_read_token
+LLM_LOCAL_DEVICE=auto
+LLM_LOCAL_DTYPE=auto
+LLM_LOCAL_CACHE_DIR=D:/llm-cache
+LLM_LOCAL_CONTEXT_WINDOW=4096
+LLM_TEMPERATURE=0.1
+LLM_MAX_TOKENS=1024
+```
+
+Download and validate the configured model once, then start Karya:
+
+```powershell
+npm run api:setup:local-llm
+npm run dev:all
+```
+
+`auto` selects CUDA, Apple MPS, then CPU. The 4096/1024 settings are the safe
+profile for a 4 GB GPU; larger cards can raise them deliberately. Model loading
+is **lazy**: Karya starts and lists platforms without importing weights. The first
+AI request starts a background loader and returns a retryable message. Check
+`GET /health`; `llm.status` moves through `not_started` → `loading` → `ready`
+(or `error`). Retry the AI request after it reports `ready`. Normal project,
+architecture, admin, and reporting APIs remain usable while the model loads.
+The setup command downloads and validates the model once; later runs reuse the
+persistent Hugging Face cache. Add `-- --verify-load` to perform an optional
+one-off RAM/VRAM weight-load test. Every API process must still map cached
+weights into memory once before inference, and its terminal shows tensor-loading
+progress plus explicit `Local LLM loading started` / `Local LLM ready` messages.
 
 **Claude**
 
@@ -180,7 +249,7 @@ LLM_API_KEY=your-moonshot-key
 LLM_BASE_URL=https://api.moonshot.ai/v1
 ```
 
-Native integrations use LangChain `init_chat_model(model=..., model_provider=...)`. Moonshot, DeepSeek, OpenRouter, Ollama, vLLM, and generic compatible endpoints share `ChatOpenAI(base_url=...)`. Temperature, maximum output tokens, key, and base URL all come from the environment. Invalid LLM configuration is checked during application startup; diagnostics remain available through `/health` so the UI can show the fix instead of a stack trace.
+Native integrations use LangChain `init_chat_model(model=..., model_provider=...)`. Moonshot, DeepSeek, OpenRouter, Ollama, vLLM, and generic compatible endpoints share `ChatOpenAI(base_url=...)`. The `local` provider uses the lazy Transformers adapter in `backend/llm/local.py`. Temperature, maximum output tokens, key, base URL, device, dtype, cache, and local context limits all come from the environment. Invalid LLM configuration is checked during application startup; diagnostics and local runtime state remain available through `/health` so the UI can show the fix instead of a stack trace.
 
 ## Jira configuration
 
@@ -234,7 +303,7 @@ After derivation, a 13 or High uncertainty takes the conditional spike/split bra
 
 | Method | Route | Purpose |
 |---|---|---|
-| GET | `/health` | LLM configuration and per-Jira health |
+| GET | `/health` | LLM configuration/runtime state (`not_started`/`loading`/`ready`/`error`) and per-Jira health |
 | GET | `/config` | Non-secret active configuration |
 | GET | `/jira/instances` | Named Jira instances and auth types |
 | GET | `/jira/{instance}/project/{code}/issues` | Paginated JQL project fetch with status/sprint filters |

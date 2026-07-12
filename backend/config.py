@@ -32,6 +32,13 @@ class LLMSettings(BaseModel):
     base_url: str | None = None
     temperature: float = Field(default=0.2, ge=0, le=2)
     max_tokens: int = Field(default=3000, ge=128, le=100_000)
+    local_device: str = "auto"
+    local_dtype: str = "auto"
+    local_revision: str = "main"
+    local_cache_dir: str | None = None
+    local_context_window: int = Field(default=8192, ge=512, le=131_072)
+    local_trust_remote_code: bool = False
+    local_files_only: bool = False
 
     @field_validator("provider", "model")
     @classmethod
@@ -39,6 +46,22 @@ class LLMSettings(BaseModel):
         if not value.strip():
             raise ValueError("must not be empty")
         return value.strip()
+
+    @field_validator("local_dtype")
+    @classmethod
+    def valid_local_dtype(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in {"auto", "float32", "float16", "bfloat16"}:
+            raise ValueError("must be auto, float32, float16, or bfloat16")
+        return value
+
+    @field_validator("local_device")
+    @classmethod
+    def valid_local_device(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in {"auto", "cpu", "mps", "cuda"} and not value.startswith("cuda:"):
+            raise ValueError("must be auto, cpu, mps, cuda, or cuda:<index>")
+        return value
 
 
 class JiraInstanceSettings(BaseModel):
@@ -69,6 +92,13 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None
     llm_temperature: float = 0.2
     llm_max_tokens: int = 3000
+    llm_local_device: str = "auto"
+    llm_local_dtype: str = "auto"
+    llm_local_revision: str = "main"
+    llm_local_cache_dir: str | None = None
+    llm_local_context_window: int = 8192
+    llm_local_trust_remote_code: bool = False
+    llm_local_files_only: bool = False
     jira_instances: str = ""
     jira_write_enabled: bool = False
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
@@ -83,6 +113,13 @@ class Settings(BaseSettings):
                 base_url=self.llm_base_url or None,
                 temperature=self.llm_temperature,
                 max_tokens=self.llm_max_tokens,
+                local_device=self.llm_local_device,
+                local_dtype=self.llm_local_dtype,
+                local_revision=self.llm_local_revision,
+                local_cache_dir=self.llm_local_cache_dir or None,
+                local_context_window=self.llm_local_context_window,
+                local_trust_remote_code=self.llm_local_trust_remote_code,
+                local_files_only=self.llm_local_files_only,
             )
         except ValidationError as exc:
             raise ConfigurationError(

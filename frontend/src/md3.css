@@ -91,6 +91,8 @@
 
 /* ── Projects home (Material 3 project cards) ──────────────────────────── */
 .proj-home { max-width: 1180px; margin: 0 auto; }
+.proj-loading { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--m3-on-surface-variant); }
+.proj-loading svg { animation: spin .9s linear infinite; }
 .proj-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 4px 0 26px; flex-wrap: wrap; }
 .proj-hero h1 { font-size: 30px; font-weight: 500; letter-spacing: -.02em; }
 .proj-hero p { margin: 8px 0 0; max-width: 560px; color: var(--m3-on-surface-variant); font-size: 14px; line-height: 1.5; }

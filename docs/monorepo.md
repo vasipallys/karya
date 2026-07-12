@@ -13,6 +13,8 @@ The root `package.json` is an orchestrator. Node dependencies belong to the Node
 - `frontend/package.json` owns browser dependencies and Vitest.
 - `desktop/package.json` owns Electron, Electron Builder, and desktop packaging helpers.
 - Python dependencies remain in `requirements.txt` and `requirements-desktop.txt`.
+- Optional in-process Hugging Face dependencies live in `requirements-local.txt`;
+  see [Local Hugging Face LLM](local-llm.md).
 
 ## Execute
 

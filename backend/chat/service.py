@@ -95,7 +95,7 @@ def dispatch(project_id: str, command: ChatCommand) -> dict[str, Any]:
         return _report(project_id, command)
     if action == "web_search":
         return _web_search(command)
-    if action in ("answer", "code"):
+    if action in ("answer", "code", "image", "document"):
         return {"reply": command.reply or "I need a little more detail to answer that.", "action": action,
                 "data": None, "mutation": None}
     if action in ("create_element", "update_element", "delete_element", "create_relation"):

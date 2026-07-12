@@ -1,4 +1,4 @@
-import { BookOpen, FolderGit2, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { BookOpen, FolderGit2, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 
@@ -93,7 +93,11 @@ export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
   const [projects, setProjects] = useState(null)
   const [error, setError] = useState(null)
 
-  const refresh = () => api.listProjects().then(setProjects).catch(setError)
+  const refresh = () => {
+    setError(null)
+    setProjects(null)
+    return api.listProjects().then(setProjects).catch(setError)
+  }
   useEffect(() => { refresh() }, [])
 
   const remove = async (event, project) => {
@@ -116,7 +120,8 @@ export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
         </div>
       </header>
 
-      {error && <div className="m3-banner error">{String(error.message || error)}</div>}
+      {projects === null && !error && <div className="proj-loading"><LoaderCircle size={22} /> {'Loading platforms\u2026'}</div>}
+      {error && <div className="m3-banner error">{String(error.message || error)} <button className="m3-btn text small" onClick={refresh}><RefreshCw size={13} /> Retry</button></div>}
 
       {isEmpty && (
         <div className="proj-empty">
@@ -129,7 +134,7 @@ export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
         </div>
       )}
 
-      {!isEmpty && (
+      {projects !== null && !isEmpty && (
         <div className="proj-grid">
           {(projects || []).map((project) => (
             <ProjectCard key={project.id} project={project} onOpen={onOpen} onDelete={remove} />

@@ -339,9 +339,18 @@
 .chatdock-suggest { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
 .chatdock-suggest button { font-size: 12px; padding: 6px 10px; border: 1px solid var(--m3-outline-variant); border-radius: 999px; background: var(--m3-surface); cursor: pointer; color: var(--m3-on-surface-variant); }
 .chatdock-suggest button:hover { border-color: var(--m3-primary); color: var(--m3-primary); }
-.chatdock-input { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--m3-outline-variant); }
+.chatdock-input { display: flex; padding: 12px 14px; border-top: 1px solid var(--m3-outline-variant); }
 .chatdock-compose { flex: 1; min-width: 0; border: 1px solid var(--m3-outline-variant); border-radius: 18px; overflow: hidden; background: var(--m3-surface); }
-.chatdock-compose > input { width: 100%; box-sizing: border-box; border: 0; padding: 9px 14px; font: inherit; font-size: 13.5px; outline: none; background: transparent; }
+.chatdock-compose:focus-within { border-color: var(--m3-primary); box-shadow: 0 0 0 1px var(--m3-primary); }
+.chatdock-compose > input { width: 100%; box-sizing: border-box; border: 0; padding: 12px 14px 8px; font: inherit; font-size: 13.5px; outline: none; background: transparent; }
+.chatdock-compose-bar { display: flex; align-items: center; gap: 4px; padding: 4px 7px 7px; }
+.chatdock-modes { display: flex; flex: 1; min-width: 0; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.chatdock-modes::-webkit-scrollbar { display: none; }
+.chatdock-modes button { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 5px 7px; border: 0; border-radius: 8px; background: transparent; color: var(--m3-on-surface-variant); font: inherit; font-size: 10.5px; cursor: pointer; }
+.chatdock-modes button:hover { background: var(--m3-surface-container); color: var(--m3-on-surface); }
+.chatdock-modes button.active { background: var(--m3-secondary-container); color: var(--m3-on-secondary-container); font-weight: 600; }
+.chatdock-send { flex: none; background: var(--m3-primary); color: var(--m3-on-primary); }
+.chatdock-send:disabled { background: var(--m3-surface-container-high); color: var(--m3-outline); }
 .chatdock-files { display: flex; flex-wrap: wrap; gap: 5px; padding: 7px 8px 0; }
 .chatdock-files > span { display: inline-flex; align-items: center; gap: 4px; max-width: 180px; padding: 3px 7px; border-radius: 8px; background: var(--m3-surface-container-high); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chatdock-files button { border: 0; background: none; cursor: pointer; color: inherit; }

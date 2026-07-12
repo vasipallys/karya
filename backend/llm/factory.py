@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from typing import TypeVar
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.runnables import Runnable
+from langchain_core.messages import SystemMessage
+from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
@@ -16,6 +18,7 @@ from backend.config import ConfigurationError, get_settings
 OPENAI_COMPATIBLE = {"moonshot", "deepseek", "openrouter", "ollama", "vllm", "compatible"}
 NATIVE_PROVIDERS = {"anthropic", "google_genai", "openai", "groq", "mistral"}
 OFFLINE_PROVIDERS = {"mock"}
+LOCAL_PROVIDERS = {"local"}
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
@@ -24,11 +27,11 @@ def validate_factory_config() -> None:
     config = get_settings().llm
     provider = config.provider.lower()
     errors = []
-    if provider not in OPENAI_COMPATIBLE | NATIVE_PROVIDERS | OFFLINE_PROVIDERS:
+    if provider not in OPENAI_COMPATIBLE | NATIVE_PROVIDERS | OFFLINE_PROVIDERS | LOCAL_PROVIDERS:
         errors.append(f"Unsupported LLM_PROVIDER '{config.provider}'")
     if provider in OPENAI_COMPATIBLE and not config.base_url:
         errors.append(f"LLM_BASE_URL is required for provider '{config.provider}'")
-    if provider not in OFFLINE_PROVIDERS and not config.api_key.get_secret_value():
+    if provider not in OFFLINE_PROVIDERS | LOCAL_PROVIDERS and not config.api_key.get_secret_value():
         errors.append("LLM_API_KEY is required")
     if errors:
         raise ConfigurationError(errors)
@@ -44,6 +47,22 @@ def get_llm() -> BaseChatModel:
         from langchain_core.language_models import FakeListChatModel
 
         return FakeListChatModel(responses=["Mock mode is active; structured estimation uses the offline mock."])
+    if provider in LOCAL_PROVIDERS:
+        from backend.llm.local import LocalHuggingFaceChatModel
+
+        return LocalHuggingFaceChatModel(
+            model_name=config.model,
+            token=config.api_key.get_secret_value() or None,
+            temperature=config.temperature,
+            max_new_tokens=config.max_tokens,
+            device=config.local_device,
+            dtype=config.local_dtype,
+            revision=config.local_revision,
+            cache_dir=config.local_cache_dir,
+            context_window=config.local_context_window,
+            trust_remote_code=config.local_trust_remote_code,
+            local_files_only=config.local_files_only,
+        )
     common = {
         "model": config.model,
         "temperature": config.temperature,
@@ -64,7 +83,35 @@ def get_structured_llm(schema: type[SchemaT]) -> Runnable:
 
         return MockStructuredLLM(schema)
     model = get_llm()
+    if config.provider.lower() in LOCAL_PROVIDERS:
+        schema_json = json.dumps(schema.model_json_schema(), separators=(",", ":"))
+        instruction = (
+            f"Return only one valid JSON object matching this JSON Schema. No markdown or commentary.\n{schema_json}"
+        )
+
+        async def invoke(messages):
+            raw = await model.ainvoke([SystemMessage(content=instruction), *messages])
+            return {"raw": raw, "parsed": None, "parsing_error": None}
+
+        return RunnableLambda(invoke)
     if config.provider.lower() == "groq":
         # Groq JSON mode avoids tool_use_failed errors from otherwise-valid tool args.
         return model.with_structured_output(schema, method="json_mode", include_raw=True)
     return model.with_structured_output(schema, include_raw=True)
+
+
+def llm_runtime_status() -> dict:
+    if get_settings().llm.provider.lower() not in LOCAL_PROVIDERS:
+        return {"status": "ready"}
+    from backend.llm.local import runtime_status
+    return runtime_status()
+
+
+def prefers_text_routing() -> bool:
+    """Whether the configured model is more reliable with deterministic routing.
+
+    Small local instruction models are good response generators but unreliable
+    emitters of Karya's large ChatCommand JSON schema. Keep the provider name in
+    this factory while allowing the chat agent to select the suitable strategy.
+    """
+    return get_settings().llm.provider.lower() in LOCAL_PROVIDERS

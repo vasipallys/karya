@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules
@@ -20,6 +21,9 @@ for package in [
     "pptx",
 ]:
     hiddenimports.extend(collect_submodules(package))
+if os.getenv("KARYA_BUNDLE_LOCAL_LLM", "").lower() in {"1", "true", "yes"}:
+    for package in ["transformers", "accelerate", "safetensors", "torch"]:
+        hiddenimports.extend(collect_submodules(package))
 
 a = Analysis(
     [str(ROOT / "desktop" / "backend_launcher.py")],

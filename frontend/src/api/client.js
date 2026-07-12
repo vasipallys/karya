@@ -305,10 +305,10 @@ export const api = {
   workflowGuide: (id) => jsonRequest(`/projects/${id}/workflow`),
 
   // Conversational assistant
-  chat: (id, message, history = [], conversationId = null, attachmentIds = []) =>
-    json(`/projects/${id}/chat`, 'POST', { message, history, conversation_id: conversationId, attachment_ids: attachmentIds }),
-  chatStream: (id, message, history, onEvent, signal, conversationId = null, attachmentIds = []) =>
-    consumeSSE(`/projects/${id}/chat/stream`, { message, history, conversation_id: conversationId, attachment_ids: attachmentIds }, onEvent, signal),
+  chat: (id, message, history = [], conversationId = null, attachmentIds = [], mode = 'auto') =>
+    json(`/projects/${id}/chat`, 'POST', { message, history, conversation_id: conversationId, attachment_ids: attachmentIds, mode }),
+  chatStream: (id, message, history, onEvent, signal, conversationId = null, attachmentIds = [], mode = 'auto') =>
+    consumeSSE(`/projects/${id}/chat/stream`, { message, history, conversation_id: conversationId, attachment_ids: attachmentIds, mode }, onEvent, signal),
   chatApply: (id, mutation) => json(`/projects/${id}/chat/apply`, 'POST', { mutation }),
   chatConversations: (id) => jsonRequest(`/projects/${id}/chat/conversations`),
   chatConversation: (id, conversationId) => jsonRequest(`/projects/${id}/chat/conversations/${conversationId}`),

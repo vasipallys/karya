@@ -166,6 +166,7 @@
       <span class="chip"><b>1·2·3·5·8·13</b> evidence-led points</span>
       <span class="chip"><b>MD + Mermaid</b> is the deck</span>
       <span class="chip"><b>Offline</b> mock mode, no key</span>
+      <span class="chip"><b>Local AI</b> Gemma via Hugging Face</span>
     </div>
 
     <div class="levels">
@@ -254,15 +255,15 @@ const CH = [
     tip:["Deterministic","No AI here — it reflects exactly what's in your model, and a level ‘unlocks’ once its parent exists."] },
 
   { key:"assistant", img:"assistant", nav:"Assistant (chat)", eyebrow:"Step 6 · Assistant",
-    title:"Ask & instruct in plain language",
-    desc:"The floating assistant answers questions about the platform and makes changes for you — always proposing a change before it's saved.",
+    title:"Ask, code, research & create",
+    desc:"The persistent multimode assistant answers questions, works with attachments, and proposes platform changes before anything is saved.",
     steps:[
-      "Ask: <code>What's the project status?</code> · <code>List L2 containers</code> · <code>Readiness of onboarding-web</code>.",
-      "Instruct: <code>Create an L2 container called payments under Digital banking</code>.",
+      "Choose <b>Auto, Chat, Code, Research, Image, or Document</b>. A selected mode is enforced instead of relying on keywords.",
+      "Attach text/code, CSV/Excel, Word, or image files; use voice input, spoken replies, history, and dock/maximize controls.",
+      "Ask in Auto: <code>What's the project status?</code> · <code>List L2 containers</code>, or instruct: <code>Create an L2 payments container</code>.",
       "Review the <b>proposal card</b>, then click <b>Apply</b> to confirm (or Dismiss).",
-      "It answers with real numbers and structured data — element lists, readiness chips, per-level progress."
     ],
-    tip:["Safe by design","Changes are proposed first, never applied silently — and applying a change needs edit rights."] },
+    tip:["Local Gemma","Install <code>requirements-local.txt</code>, then run <code>npm run api:setup:local-llm</code> once. Cached weights load after the first AI request with progress in the API terminal; check <code>/health</code> for not_started → loading → ready."] },
 
   { key:"admin", img:"integrations", thumbs:["integrations","resources"], nav:"Admin & integrations", eyebrow:"Step 7 · Admin",
     title:"Admin — integrations, resources & access",

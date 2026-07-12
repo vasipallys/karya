@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "api:dev": "node scripts/run-python.mjs -m uvicorn backend.api.main:app --reload --port 8000",
+    "api:setup:local-llm": "node scripts/run-python.mjs scripts/setup_local_llm.py",
     "api:seed:banking": "node scripts/run-python.mjs scripts/seed_banking.py",
     "api:seed:demo": "node scripts/run-python.mjs scripts/seed_demo.py",
     "api:seed:resources": "node scripts/run-python.mjs scripts/seed_resources.py",

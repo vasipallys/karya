@@ -19,6 +19,8 @@ from backend.reporting import service as reporting_service
 from backend.resources import store as resources
 from backend.resources.models import StaffCreate
 from backend.storage import db
+from backend.config import get_settings
+from backend.llm.factory import get_llm
 
 
 @pytest.fixture
@@ -32,8 +34,14 @@ def work_dir():
 def isolated_db(work_dir, monkeypatch):
     monkeypatch.setenv("KARYA_DB", str(work_dir / "test.db"))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setenv("LLM_MODEL", "mock")
+    monkeypatch.setenv("LLM_API_KEY", "")
+    get_settings.cache_clear()
+    get_llm.cache_clear()
     db._initialized.clear()
     yield
+    get_settings.cache_clear()
+    get_llm.cache_clear()
 
 
 def _scope():

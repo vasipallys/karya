@@ -33,6 +33,7 @@ class ChatAgentState(TypedDict, total=False):
     message: str
     history: list[dict[str, str]]
     attachment_context: str
+    mode: str
     plan: dict[str, Any]        # planner branch
     facts: dict[str, Any]       # retrieval branch
     tool_runs: dict[str, Any]   # tools branch
@@ -42,7 +43,7 @@ class ChatAgentState(TypedDict, total=False):
 
 async def planner(state: ChatAgentState) -> dict[str, Any]:
     command = await agents.interpret_chat(state["project_id"], state["message"], state.get("history"),
-                                          state.get("attachment_context", ""))
+                                          state.get("attachment_context", ""), state.get("mode", "auto"))
     return {"plan": command.model_dump()}
 
 

@@ -67,7 +67,17 @@ def _parse_structured_result(schema: type[T], result: Any) -> T:
             try:
                 candidates.insert(0, json.loads(text))
             except json.JSONDecodeError:
-                continue
+                # Small local models occasionally wrap valid JSON in a sentence.
+                decoder = json.JSONDecoder()
+                for index, char in enumerate(text):
+                    if char != "{":
+                        continue
+                    try:
+                        value, _ = decoder.raw_decode(text[index:])
+                        candidates.insert(0, value)
+                        break
+                    except json.JSONDecodeError:
+                        pass
             continue
         if isinstance(candidate, list):
             # Some Groq models return [echoed_schema, actual_result]. Prefer the last item.

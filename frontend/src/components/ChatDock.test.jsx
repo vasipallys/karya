@@ -153,4 +153,16 @@ describe('ChatDock', () => {
     expect(screen.queryByRole('button', { name: 'Speak your request' })).not.toBeInTheDocument()
     expect(screen.getByPlaceholderText('Ask or instruct…')).toBeInTheDocument()
   })
+
+  it('sends an explicit mode instead of relying on keyword detection', async () => {
+    renderDock()
+    openDock()
+    fireEvent.click(screen.getByRole('button', { name: 'Code' }))
+    fireEvent.change(screen.getByPlaceholderText('Describe code to write or review…'), { target: { value: 'make a hook' } })
+    fireEvent.keyDown(screen.getByPlaceholderText('Describe code to write or review…'), { key: 'Enter' })
+
+    await waitFor(() => expect(api.chatStream).toHaveBeenCalledWith(
+      'p1', 'make a hook', expect.any(Array), expect.any(Function), undefined, null, [], 'code',
+    ))
+  })
 })

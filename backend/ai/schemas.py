@@ -256,7 +256,7 @@ class ChatCommand(BaseModel):
     action: Literal[
         "overview", "list", "readiness", "report",
         "create_element", "update_element", "delete_element", "create_relation",
-        "answer", "code", "web_search", "help", "none",
+        "answer", "code", "web_search", "image", "document", "help", "none",
     ] = "help"
     level: str = Field(default="", max_length=4)       # L1–L4 (list / create)
     name: str = Field(default="", max_length=200)      # target element name

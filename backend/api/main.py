@@ -20,7 +20,7 @@ from backend.graph.checkpoint import set_checkpointer
 from backend.ingest.excel import UploadError, dataframe_payload, read_upload, rows_to_stories, template_workbook
 from backend.jira.client import JiraError
 from backend.jira.registry import get_jira_registry
-from backend.llm.factory import validate_factory_config
+from backend.llm.factory import llm_runtime_status, validate_factory_config
 from backend.models import (
     BatchEstimateRequest,
     ErrorPayload,
@@ -169,7 +169,8 @@ async def health(request: Request) -> dict[str, Any]:
     errors = getattr(request.app.state, "configuration_errors", [])
     return {
         "status": "degraded" if errors else "ok",
-        "llm": {"status": "configuration_error" if errors else "configured", "errors": errors},
+        "llm": ({"status": "configuration_error", "errors": errors} if errors
+                else {**llm_runtime_status(), "errors": []}),
         "jira": await get_jira_registry().health(),
     }
 

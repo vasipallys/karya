@@ -1,4 +1,4 @@
-import { ArrowUpRight, Bot, Check, History, Maximize2, MessageSquare, Mic, Minimize2, Paperclip, PanelRight, PanelRightClose, Plus, Send, Sparkles, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { ArrowUpRight, Bot, Check, Code2, FileText, History, Image, Maximize2, MessageSquare, Mic, Minimize2, Paperclip, PanelRight, PanelRightClose, Plus, Search, Send, Sparkles, Trash2, Volume2, VolumeX, WandSparkles, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -11,6 +11,15 @@ const SUGGESTIONS = [
   'What should I do next?',
   'List L2 containers',
   'Create an L2 container called payments',
+]
+
+const CHAT_MODES = [
+  { key: 'auto', label: 'Auto', icon: WandSparkles, hint: 'Ask or instruct\u2026' },
+  { key: 'chat', label: 'Chat', icon: MessageSquare, hint: 'Ask a question\u2026' },
+  { key: 'code', label: 'Code', icon: Code2, hint: 'Describe code to write or review\u2026' },
+  { key: 'research', label: 'Research', icon: Search, hint: 'What should I research?\u2026' },
+  { key: 'image', label: 'Image', icon: Image, hint: 'Describe a visual, SVG, or diagram\u2026' },
+  { key: 'document', label: 'Document', icon: FileText, hint: 'Write or review a document\u2026' },
 ]
 
 // Floating conversational assistant: query / report over the project, and propose
@@ -27,6 +36,9 @@ export default function ChatDock({ projectId, onChanged, onOpenElement }) {
   const [conversations, setConversations] = useState([])
   const [showHistory, setShowHistory] = useState(false)
   const [attachments, setAttachments] = useState([])
+  const [chatMode, setChatMode] = useState(() => {
+    try { return window.localStorage.getItem('karya.chat.mode') || 'auto' } catch { return 'auto' }
+  })
   const fileInput = useRef(null)
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
@@ -35,6 +47,7 @@ export default function ChatDock({ projectId, onChanged, onOpenElement }) {
     try { return window.localStorage.getItem('karya.chatdock.mode') || 'float' } catch { return 'float' }
   })
   useEffect(() => { try { window.localStorage.setItem('karya.chatdock.mode', mode) } catch { /* ignore */ } }, [mode])
+  useEffect(() => { try { window.localStorage.setItem('karya.chat.mode', chatMode) } catch { /* ignore */ } }, [chatMode])
   const scroller = useRef(null)
   const recognition = useRef(null)
   const speakingRef = useRef(false)
@@ -127,19 +140,20 @@ export default function ChatDock({ projectId, onChanged, onOpenElement }) {
           say(data.message)
         }
       }
-      if (conversationId || attachments.length) {
-        await api.chatStream(projectId, message, history, handleEvent, undefined, conversationId, attachments.map((a) => a.id))
-      } else {
+      if (chatMode === 'auto' && !conversationId && !attachments.length) {
         await api.chatStream(projectId, message, history, handleEvent)
+      } else {
+        await api.chatStream(projectId, message, history, handleEvent, undefined, conversationId,
+          attachments.map((a) => a.id), chatMode)
       }
       if (!done) throw new Error('The assistant stream ended unexpectedly.')
     } catch (err) {
       if (!done) {
         // Streaming unavailable — fall back to the plain endpoint.
         try {
-          const result = conversationId || attachments.length
-            ? await api.chat(projectId, message, history, conversationId, attachments.map((a) => a.id))
-            : await api.chat(projectId, message, history)
+          const result = chatMode === 'auto' && !conversationId && !attachments.length
+            ? await api.chat(projectId, message, history)
+            : await api.chat(projectId, message, history, conversationId, attachments.map((a) => a.id), chatMode)
           setConversationId(result.conversation_id); setAttachments([]); pushAssistant(result)
         }
         catch (inner) {
@@ -269,17 +283,24 @@ export default function ChatDock({ projectId, onChanged, onOpenElement }) {
 
           <div className="chatdock-input">
             <input ref={fileInput} type="file" multiple hidden onChange={addFiles} />
-            <button className="m3-icon-btn" onClick={() => fileInput.current?.click()} disabled={busy} aria-label="Add files" title="Add files"><Paperclip size={16} /></button>
-            {SpeechRec && <button className={`m3-icon-btn chatdock-mic${listening ? ' listening' : ''}`}
-              onClick={toggleMic} disabled={busy}
-              aria-label={listening ? 'Stop listening' : 'Speak your request'}
-              title={listening ? 'Listening… click to stop' : 'Speak your request'}><Mic size={16} /></button>}
             <div className="chatdock-compose">
             {attachments.length > 0 && <div className="chatdock-files">{attachments.map((a) => <span key={a.id}>{a.filename}<button onClick={() => setAttachments((items) => items.filter((x) => x.id !== a.id))}>×</button></span>)}</div>}
-            <input value={input} placeholder={listening ? 'Listening…' : 'Ask or instruct…'} disabled={busy}
+            <input value={input} placeholder={listening ? 'Listening…' : CHAT_MODES.find((item) => item.key === chatMode)?.hint} disabled={busy}
               onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send() }} />
+            <div className="chatdock-compose-bar">
+              <button className="m3-icon-btn" onClick={() => fileInput.current?.click()} disabled={busy} aria-label="Add files" title="Add files"><Paperclip size={16} /></button>
+              <div className="chatdock-modes" role="group" aria-label="Assistant mode">
+                {CHAT_MODES.map(({ key, label, icon: Icon }) => <button key={key} type="button"
+                  className={chatMode === key ? 'active' : ''} aria-pressed={chatMode === key}
+                  onClick={() => setChatMode(key)} disabled={busy} title={`${label} mode`}>
+                  <Icon size={13} /><span>{label}</span></button>)}
+              </div>
+              {SpeechRec && <button className={`m3-icon-btn chatdock-mic${listening ? ' listening' : ''}`}
+                onClick={toggleMic} disabled={busy} aria-label={listening ? 'Stop listening' : 'Speak your request'}
+                title={listening ? 'Listening… click to stop' : 'Speak your request'}><Mic size={16} /></button>}
+              <button className="m3-icon-btn chatdock-send" disabled={busy || !input.trim()} onClick={() => send()} aria-label="Send"><Send size={15} /></button>
             </div>
-            <button className="m3-btn filled small" disabled={busy || !input.trim()} onClick={() => send()} aria-label="Send"><Send size={15} /></button>
+            </div>
           </div>
         </div>
       )}

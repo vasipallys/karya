@@ -48,7 +48,7 @@ function writeDefaultDesktopEnv(target) {
   if (exists(template)) {
     fs.copyFileSync(template, target)
   } else {
-    fs.writeFileSync(target, 'LLM_PROVIDER=mock\nLLM_MODEL=mock\nLLM_API_KEY=\nJIRA_INSTANCES=\nJIRA_WRITE_ENABLED=false\nCORS_ORIGINS=null,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174\n')
+    fs.writeFileSync(target, 'LLM_PROVIDER=mock\nLLM_MODEL=mock\nLLM_API_KEY=\nLLM_LOCAL_DEVICE=auto\nLLM_LOCAL_DTYPE=auto\nLLM_LOCAL_CONTEXT_WINDOW=8192\nJIRA_INSTANCES=\nJIRA_WRITE_ENABLED=false\nCORS_ORIGINS=null,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174\n')
   }
 }
 

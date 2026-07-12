@@ -27,7 +27,7 @@ internal design map see [CLAUDE.md](../CLAUDE.md).
 15. [Admin console](#15-admin-console)
 16. [Integrations & connectors](#16-integrations--connectors)
 17. [Diagram studio & Mermaid](#17-diagram-studio--mermaid)
-18. [Working offline (mock mode) & AI notes](#18-working-offline-mock-mode--ai-notes)
+18. [AI runtimes: mock, cloud & local](#18-ai-runtimes-mock-cloud--local)
 19. [Desktop app](#19-desktop-app)
 20. [Troubleshooting & FAQ](#20-troubleshooting--faq)
 
@@ -90,7 +90,7 @@ Open **http://localhost:5173**.
 
 > **Try it with no API key.** Set `LLM_PROVIDER=mock` in `backend/.env` to run the
 > whole app offline with deterministic results — perfect for a first look, demos,
-> and local UI work. See [§18](#18-working-offline-mock-mode--ai-notes).
+> and local UI work. See [§18](#18-ai-runtimes-mock-cloud--local).
 
 Seed sample data (optional):
 
@@ -386,6 +386,18 @@ first. Everything here is deterministic (no AI) — it reflects your real data.
 The floating **Assistant** (bottom-right, inside a platform) lets you query,
 report, and modify the model in plain language.
 
+The composer has six explicit modes. **Auto** interprets the request using
+project context. **Chat** forces a general answer, **Code** generates or reviews
+code, **Research** searches the public web and returns links, **Image** creates a
+visual brief/image prompt/SVG/Mermaid source, and **Document** writes or reviews
+documents and attachments. A forced non-Auto mode cannot be turned into a C4
+write proposal by keyword detection.
+
+Use the paperclip to attach text/code, CSV/Excel, Word, or image files. Chats and
+attachments are saved per platform and user. The header provides conversation
+history, new chat, spoken replies, and floating/docked/maximized layouts; voice
+input appears when the browser supports speech recognition.
+
 **Ask (executes immediately)**
 - *"What's the project status?"* / *"What should I do next?"*
 - *"List L2 containers"* · *"Readiness of onboarding-web"*
@@ -483,7 +495,7 @@ embed directly into the exportable summaries.
 
 ---
 
-## 18. Working offline (mock mode) & AI notes
+## 18. AI runtimes: mock, cloud & local
 
 **Mock mode.** Set `LLM_PROVIDER=mock` in `backend/.env` to run the entire app
 **offline with no API key**. Estimation points are a deterministic hash of the
@@ -503,6 +515,50 @@ ids redacted) before it reaches the model.
 **Switching providers** is a `backend/.env` change (`LLM_PROVIDER`, `LLM_MODEL`,
 `LLM_API_KEY`, …) — see the README's *Provider switches*. No application code
 changes.
+
+**Local Hugging Face mode.** Install the optional runtime and configure Gemma:
+
+```powershell
+python -m pip install -r requirements-local.txt
+npm run api:setup:local-llm
+```
+
+```dotenv
+LLM_PROVIDER=local
+LLM_MODEL=google/gemma-3-1b-it
+LLM_API_KEY=hf_optional_read_token
+LLM_LOCAL_DEVICE=auto
+LLM_LOCAL_DTYPE=auto
+LLM_LOCAL_CACHE_DIR=D:/llm-cache
+LLM_LOCAL_CONTEXT_WINDOW=4096
+LLM_TEMPERATURE=0.1
+LLM_MAX_TOKENS=1024
+```
+
+Accept the Gemma license on Hugging Face before its first download. `auto`
+selects CUDA, then Apple MPS, then CPU. The 4096-token input / 1024-token output
+profile is suitable for a 4 GB GPU; CPU works but is much slower.
+
+`api:setup:local-llm` is the first-time setup: it downloads and validates the
+configured model into the persistent Hugging Face cache. Run
+`npm run api:setup:local-llm -- --verify-load` to additionally test that the
+weights fit in RAM/VRAM. Downloads happen once; each new API process must still
+load the cached weights into memory once.
+
+Local weights load **lazily**, never during Karya startup. The Platforms screen
+and all deterministic features appear immediately. The first AI request starts
+the background loader and returns a retryable message. Inspect `/health`:
+
+- `not_started` — no AI request has needed the model yet;
+- `loading` — weights are downloading/loading; retry later;
+- `ready` — local inference is available;
+- `error` — read `llm.error`, fix the dependency/access/device issue, and restart.
+
+The API terminal shows live Hugging Face/Transformers progress and prints
+`Local LLM loading started` followed by `Local LLM ready` with the elapsed time.
+
+For complete local deployment, cache/model pinning, air-gapped operation, and
+desktop packaging, see [Local Hugging Face LLM](local-llm.md).
 
 ---
 
@@ -531,6 +587,17 @@ users; otherwise the first staff you add becomes admin.
 **AI features return 503 / "configuration incomplete".** The configured LLM is
 missing its key. Fix `backend/.env` (or use `LLM_PROVIDER=mock`) and restart the
 API. **/health** reports configuration errors.
+
+**Platforms are blank and the header says “Checking model…”.** Current versions
+do not load local weights at startup. Stop the old process completely, run
+`npm run dev:all` again, and hard-refresh the browser. The Platforms page now
+shows an explicit loading state and a **Retry** button if `/projects` fails.
+
+**The first local AI request says the model is loading.** This is expected and
+does not block normal platform work. Poll `/health` until `llm.status` is
+`ready`, then retry. If it becomes `error`, verify `requirements-local.txt` was
+installed in the same Python environment used by `npm run api:dev`, that Gemma
+access was accepted, and that the configured cache/device is available.
 
 **A viewer/contributor can't open a platform.** It's probably **restricted**
 (managers/admins only). Check the platform's sensitivity, or your role in

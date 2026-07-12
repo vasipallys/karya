@@ -610,6 +610,8 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
     if schema is ChatCommand:
         msg_match = re.search(r"USER MESSAGE:\s*(.+?)\n\nInterpret", text, re.DOTALL)
         msg = (msg_match.group(1) if msg_match else text).strip()
+        mode_match = re.search(r"REQUEST MODE:\s*(\w+)", text)
+        forced_mode = (mode_match.group(1).lower() if mode_match else "auto")
         # Known element names from the PROJECT ELEMENTS listing help resolve targets.
         names = re.findall(r"·\s*(.+?)\s*\(", text)
         names.sort(key=len, reverse=True)
@@ -707,7 +709,22 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
                 ))
             return None
 
-        command = _parse(msg)
+        forced_actions = {"chat": "answer", "code": "code", "research": "web_search",
+                          "image": "image", "document": "document"}
+        if forced_mode in forced_actions:
+            action = forced_actions[forced_mode]
+            if action == "web_search":
+                command = ChatCommand(action=action, description=msg, reply="Searching the web.")
+            elif action == "code":
+                command = ChatCommand(action=action, reply=f"```text\nMock code-mode response for: {msg}\n```")
+            elif action == "image":
+                command = ChatCommand(action=action, reply=f"**Visual brief**\n\nCreate a clear visual for: {msg}")
+            elif action == "document":
+                command = ChatCommand(action=action, reply=f"# Draft document\n\n{msg}")
+            else:
+                command = ChatCommand(action=action, reply=f"Mock chat response: {msg}")
+        else:
+            command = _parse(msg)
         if command is None:
             # Follow-up answer (e.g. just “payments” after “what should it be called?”):
             # retry against the last user turn that carried a create/update intent.
