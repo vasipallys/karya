@@ -170,6 +170,12 @@ export default function ProjectWorkspace({ projectId, config, notice, requestedT
       {tab === 'quick' && <QuickEstimate config={config} />}
       {tab === 'overview' && <Overview project={project} config={config} onChanged={refresh} />}
     </div>
-    <ChatDock projectId={projectId} onChanged={modelChanged} onOpenElement={openElement} />
+    <ChatDock projectId={projectId} onChanged={modelChanged} onOpenElement={openElement}
+      screenContext={{
+        tab,
+        tab_label: TABS.find((item) => item.id === tab)?.label || tab,
+        level: { planning: 'L1', l2arch: 'L2', l3arch: 'L3', l4arch: 'L4' }[tab] || '',
+        element_id: { planning: planningL1Id, l2arch: l2Target, l3arch: l3Target, l4arch: l4Target }[tab] || null,
+      }} />
   </div>
 }

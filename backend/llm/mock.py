@@ -608,12 +608,25 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
         )
 
     if schema is ChatCommand:
+        from backend.ai.nl import classify_read, match_relation, parse_create
+
         msg_match = re.search(r"USER MESSAGE:\s*(.+?)\n\nInterpret", text, re.DOTALL)
         msg = (msg_match.group(1) if msg_match else text).strip()
         mode_match = re.search(r"REQUEST MODE:\s*(\w+)", text)
         forced_mode = (mode_match.group(1).lower() if mode_match else "auto")
+        # The user's current screen fills an implicit level/element on reads.
+        screen_line = re.search(r"CURRENT SCREEN:\s*(.+)", text)
+        screen_level = ""
+        screen_element = ""
+        if screen_line:
+            lm = re.search(r"level=(L[1-4])", screen_line.group(1))
+            screen_level = lm.group(1) if lm else ""
+            em = re.search(r"element=([^|\n]+)", screen_line.group(1))
+            screen_element = em.group(1).strip() if em else ""
         # Known element names from the PROJECT ELEMENTS listing help resolve targets.
-        names = re.findall(r"·\s*(.+?)\s*\(", text)
+        # Anchored to the "- L2 · name (status)" listing so the snapshot/screen lines
+        # (which also contain "·") don't leak in as fake element names.
+        names = re.findall(r"^- L[1-4] · (.+?) \(", text, re.MULTILINE)
         names.sort(key=len, reverse=True)
 
         def _squash(value):
@@ -625,8 +638,6 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
             if not frag:
                 return ""
             return next((n for n in names if _squash(n) in frag or frag in _squash(n)), "")
-
-        _TYPE_WORDS = r"container|component|task|story|system|element|service|module|initiative|epic"
 
         def _parse(msg):
             low = msg.lower()
@@ -653,35 +664,19 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
             if re.search(r"\b(delete|remove)\b", low):
                 return ChatCommand(action="delete_element", name=found or _after("delete", "remove"),
                                    reply="Delete that element — Apply to confirm.")
-            if re.search(r"\b(create|add|new)\b", low):
-                body = msg
-                # “… and route/connect it to/through/via Y” → relation target created with the element.
-                target = ""
-                label = ""
-                rt = re.search(r"\b(?:and\s+)?(route|connect|link|wire|publish|call)(?:e?s)?(?:\s+it)?(?:\s+(?:to|through|via|into|with))+\s+(.+)$", msg, re.IGNORECASE)
-                if rt:
-                    target = _known(rt.group(2)) or rt.group(2).strip().strip('"“”').rstrip("?.")
-                    label = {"route": "routes", "connect": "connects to", "link": "links to",
-                             "wire": "connects to", "publish": "publishes to", "call": "calls"}[rt.group(1).lower()]
-                    body = msg[: rt.start()].rstrip(" ,.")
-                name = ""
-                nm = re.search(r"(?:called|named)\s+(.+?)(?:\s+under\s+|$)", body, re.IGNORECASE)
-                if nm:
-                    name = nm.group(1).strip().strip('"“”')
-                if not name:
-                    # Inline name: “create a L2 payments container”, “add a reporting service”.
-                    inline = re.search(rf"\b(?:create|add|new)\b\s+(?:an?\s+)?(?:l[1-4]\s+)?(?:new\s+)?[\"“”]?(.+?)[\"“”]?\s+(?:{_TYPE_WORDS})\b", body, re.IGNORECASE)
-                    if inline:
-                        candidate = re.sub(r"^\s*(?:an?|the|l[1-4])\s+", "", inline.group(1).strip(), flags=re.IGNORECASE).strip()
-                        if candidate and not re.fullmatch(r"an?|the|new|l[1-4]", candidate, re.IGNORECASE):
-                            name = candidate
-                parent = ""
-                pm = re.search(r"\bunder\s+(.+)", body, re.IGNORECASE)
-                if pm:
-                    parent = pm.group(1).strip().strip('"“”').rstrip("?.")
-                return ChatCommand(action="create_element", level=level, name=name, parent=parent,
-                                   target=target, label=label,
-                                   reply=f"Create {level or 'element'} “{name}” — Apply to confirm.")
+            # A route/connection between two *existing* elements → create_relation.
+            # Checked before create/add so "add route to payments through api-gateway"
+            # isn't read as a new element; only fires when both endpoints are known.
+            rel = match_relation(msg, names)
+            if rel:
+                source, target, label = rel
+                return ChatCommand(action="create_relation", name=source, target=target, label=label,
+                                   reply=f"Connect “{source}” to “{target}” — Apply to confirm.")
+            created = parse_create(msg, names)
+            if created and (created["name"] or created["level"] or re.match(r"^\s*(?:create|add)\b", msg, re.I)):
+                return ChatCommand(action="create_element", level=created["level"], name=created["name"],
+                                   parent=created["parent"], target=created["target"], label=created["label"],
+                                   reply=f"Create {created['level'] or 'element'} “{created['name']}” — Apply to confirm.")
             if re.search(r"\b(route|connect|link|wire)\b", low):
                 rel = re.search(r"\b(?:route|connect|link|wire)\s+(.+?)\s+(?:to|through|via|with)\s+(.+)$", msg, re.IGNORECASE)
                 if rel:
@@ -689,14 +684,12 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
                     target = _known(rel.group(2)) or rel.group(2).strip().rstrip("?.")
                     return ChatCommand(action="create_relation", name=source, target=target, label="routes",
                                        reply=f"Connect “{source}” to “{target}” — Apply to confirm.")
-            if re.search(r"\b(list|show|how many)\b", low):
-                return ChatCommand(action="list", level=level, reply="Here's what I found.")
-            if re.search(r"readiness|ready|complete", low):
-                return ChatCommand(action="readiness", level=level, name=found, reply="Checking readiness.")
-            if re.search(r"next|what should|recommend|roll.?up|report|estimat", low):
-                return ChatCommand(action="report", reply="Here's the roll-up and next step.")
-            if re.search(r"overview|status|progress|where am i|summary", low):
-                return ChatCommand(action="overview", reply="Here's the project status.")
+            # Grounded reads (overview / report / list / readiness) routed the same
+            # way on every path so status/summary queries answer from the DB.
+            read = classify_read(msg, names, screen_level, screen_element)
+            if read:
+                action, read_level, read_name = read
+                return ChatCommand(action=action, level=read_level, name=read_name, reply="Here's what I found.")
             if "help" in low or "what can you" in low:
                 return ChatCommand(action="help", reply="")
             if re.search(r"\b(search|browse|internet|web|latest|current news)\b", low):

@@ -91,19 +91,55 @@ def test_background_load_never_blocks_inference_request(monkeypatch):
     local._load_state.update(status="not_started", started_at=None, loaded_at=None, error=None)
 
 
-def test_local_provider_does_not_load_model_during_api_startup(local_config, monkeypatch):
+def test_local_provider_preloads_model_in_background_at_startup(local_config, monkeypatch):
+    """With LLM_LOCAL_PRELOAD on (the default), API startup kicks off the model
+    load on a background thread so the first user call is fast — while the load
+    itself never blocks startup or the request path."""
     directory = Path(tempfile.mkdtemp(prefix="karya-local-startup-"))
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_runtime(*args):
+        started.set()
+        release.wait(2)
+        return SimpleNamespace(warmup=lambda: None)
+
     try:
         monkeypatch.setenv("KARYA_DB", str(directory / "startup.db"))
         db._initialized.clear()
         local._load_state.update(status="not_started", started_at=None, loaded_at=None, error=None)
-        monkeypatch.setattr(local, "_runtime_cached", lambda *args: pytest.fail("startup must not load model weights"))
+        monkeypatch.setattr(local, "_runtime_cached", slow_runtime)
+
+        with TestClient(app) as client:
+            # Startup triggered the loader without waiting for weights to load.
+            assert started.wait(2), "startup did not begin preloading the local model"
+            assert client.get("/health").json()["llm"]["status"] == "loading"
+            assert client.get("/projects", headers={"X-User-Role": "admin"}).status_code == 200
+        release.set()
+    finally:
+        release.set()
+        local._load_state.update(status="not_started", started_at=None, loaded_at=None, error=None)
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_local_preload_disabled_skips_startup_load(local_config, monkeypatch):
+    """LLM_LOCAL_PRELOAD=false restores lazy loading for packaged/CI startups
+    that must not touch multi-GB weights."""
+    directory = Path(tempfile.mkdtemp(prefix="karya-local-nopreload-"))
+    try:
+        monkeypatch.setenv("KARYA_DB", str(directory / "startup.db"))
+        monkeypatch.setenv("LLM_LOCAL_PRELOAD", "false")
+        get_settings.cache_clear()
+        factory.get_llm.cache_clear()
+        db._initialized.clear()
+        local._load_state.update(status="not_started", started_at=None, loaded_at=None, error=None)
+        monkeypatch.setattr(local, "_runtime_cached", lambda *args: pytest.fail("preload disabled must not load weights"))
 
         with TestClient(app) as client:
             assert client.get("/projects", headers={"X-User-Role": "admin"}).status_code == 200
-            health = client.get("/health").json()
-            assert health["llm"]["status"] == "not_started"
+            assert client.get("/health").json()["llm"]["status"] == "not_started"
     finally:
+        local._load_state.update(status="not_started", started_at=None, loaded_at=None, error=None)
         shutil.rmtree(directory, ignore_errors=True)
 
 
@@ -146,3 +182,51 @@ async def test_local_chat_uses_deterministic_routing_without_json_generation(mon
     assert overview.action == "overview"
     assert answer.action == "answer" and answer.reply == "A normal Markdown answer, not JSON."
     assert rename.action == "update_element" and rename.new_name == "payments-v2"
+
+
+@pytest.mark.asyncio
+async def test_local_routing_grounds_status_and_summary_without_model(monkeypatch):
+    """The local path must answer grounded reads deterministically. If the model
+    is invoked for these, the routing regressed — so make invocation fail loudly."""
+    class ExplodingModel:
+        async def ainvoke(self, *args, **kwargs):
+            pytest.fail("grounded reads must not call the local model")
+
+    monkeypatch.setattr(agents, "get_llm", lambda: ExplodingModel())
+    elements = [{"name": "onboarding-web", "level": "L2", "status": "active"},
+                {"name": "api-gateway", "level": "L2", "status": "active"}]
+
+    status = await agents._interpret_local_chat("give me complete project status", "auto", elements, "ctx")
+    summary = await agents._interpret_local_chat("give me summary of all L2", "auto", elements, "ctx")
+    route = await agents._interpret_local_chat("add route to onboarding-web from api-gateway", "auto", elements, "ctx")
+
+    assert status.action == "overview"
+    assert summary.action == "list" and summary.level == "L2"
+    assert route.action == "create_relation" and route.name == "api-gateway" and route.target == "onboarding-web"
+
+
+@pytest.mark.asyncio
+async def test_local_quoted_compound_create_extracts_name_without_model(monkeypatch):
+    """The exact failing message: a quoted inline name + a connect clause must be
+    parsed deterministically into a create with a relation target — not sent to the
+    model (which asked for the name and then hallucinated)."""
+    class ExplodingModel:
+        async def ainvoke(self, *args, **kwargs):
+            pytest.fail("a well-formed create must not call the local model")
+
+    monkeypatch.setattr(agents, "get_llm", lambda: ExplodingModel())
+    elements = [{"name": "api-gateway", "level": "L2", "status": "active"}]
+
+    created = await agents._interpret_local_chat(
+        'Add a "Payments" as a new L3 Container and connect the route through api-gateway, name the route as Payments',
+        "auto", elements, "ctx")
+    assert created.action == "create_element"
+    assert created.level == "L3" and created.name == "Payments"
+    assert created.target == "api-gateway"
+
+    # A bare follow-up answer completes a pending create from history.
+    followup = await agents._interpret_local_chat(
+        "Payments", "auto", elements, "ctx",
+        history=[{"role": "user", "text": "create an L2 container"},
+                 {"role": "assistant", "text": "What should the new element be called?"}])
+    assert followup.action == "create_element" and followup.name == "Payments" and followup.level == "L2"

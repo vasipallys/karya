@@ -10,6 +10,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.ai.masking import mask_pii
+from backend.ai.nl import classify_read, match_relation, parse_create
 from backend.ai.schemas import ChatCommand, C4Scaffold, FieldSummary, L1BaselineDraft, L2Draft, L3Draft, L4Draft, NarrativeOutput, OrchestratorPlan, StaffingProposal, StoryDecomposition
 from backend.c4 import store as c4_store
 from backend.graph.nodes import _parse_structured_result
@@ -441,7 +442,9 @@ _CHAT_SYSTEM = (
     "Actions: overview (project status/next step), list (elements at a level), readiness (of a named element "
     "or level), report (roll-up / what to do next), create_element (level+name, optional parent name), "
     "update_element (name + new_name/status/description), delete_element (name), "
-    "create_relation (name=source element, target=target element, optional label), "
+    "create_relation (name=source element, target=target element, optional label) — connects two "
+    "elements that ALREADY exist; e.g. “add route to payments through api-gateway” means api-gateway → "
+    "payments (the element named after through/via is the source), and “connect A to B” means A → B, "
     "web_search (current/external facts; put the search query in description), code (generate or explain code), "
     "image (create an image prompt, visual specification, SVG, or Mermaid source), document (write, transform, or "
     "review document content in Markdown), answer (general questions and product guidance), help, or none.\n"
@@ -457,38 +460,125 @@ _CHAT_SYSTEM = (
     "Image mode is text-only: produce an excellent generation prompt, SVG/Mermaid source, or visual spec; never "
     "claim that a bitmap was generated or that image pixels were inspected. "
     "For web_search, do not invent results; set description to a focused query and let the search tool answer. "
-    "Never invent elements that aren't in the list for reads."
+    "Never invent elements that aren't in the list for reads. "
+    "Prefer the grounded read actions for questions about the model: project status/health → overview; "
+    "'what should I do next' / roll-up / points → report; 'list/show/summary of <level>' → list; how ready/complete "
+    "an element or level is → readiness. Only use answer for genuinely open-ended questions, and then ground every "
+    "claim (counts, points, status, next step) in the PROJECT SNAPSHOT and PLATFORM GUIDE — never fabricate numbers. "
+    "When a message omits the level or element (e.g. a bare 'readiness' or 'list'), default it from CURRENT SCREEN "
+    "if present — the open element for readiness, the open level for list."
 )
 
 
+# Documentation grounding: a concise, always-true description of what the app is,
+# so free-form "how do I / what is X" answers are anchored to real capabilities.
+_PLATFORM_GUIDE = (
+    "PLATFORM GUIDE:\n"
+    "Karya is an evidence-led story-point estimator and top-down architecture workspace for a C4 model "
+    "(L1 initiative → L2 container → L3 component/story → L4 task). Each level has an architecture workspace "
+    "with a readiness score, artifacts, governance sign-off, and an AI baseline generator. Story points use a "
+    "modified Fibonacci scale (1/2/3/5/8/13) and roll up deterministically from L3 stories to epics and "
+    "initiatives. The assistant can query the model (status, lists, readiness, roll-up) and propose changes "
+    "(create/rename/delete an element, connect two elements) that you review before anything is saved."
+)
+
+
+def _project_snapshot(project_id: str, elements: list[dict[str, Any]]) -> str:
+    """A compact, deterministic status line built from the DB so answers cite real
+    numbers. Best-effort — never let a snapshot failure break interpretation."""
+    by_level: dict[str, int] = {}
+    for element in elements:
+        by_level[element["level"]] = by_level.get(element["level"], 0) + 1
+    proposed = sum(1 for e in elements if e.get("status") == "proposed")
+    counts = " · ".join(f"{n} {lvl}" for lvl, n in sorted(by_level.items())) or "no elements yet"
+    lines = [f"Elements: {counts}" + (f" ({proposed} proposed)" if proposed else "")]
+    try:
+        from backend.c4 import service as c4_service
+        from backend.workflow import service as workflow_service
+
+        totals = c4_service.rollup(project_id)["totals"]
+        stories = totals["estimated_stories"] + totals["unestimated_stories"]
+        lines.append(f"Roll-up: {totals['estimated_stories']}/{stories} stories estimated · {totals['rolled_up_points']} points")
+        guide = workflow_service.guide(project_id)
+        lines.append(f"Workflow: {guide['overall_pct']}% complete (stage {guide['stage']}) · next: {guide['next_action']['text']}")
+    except Exception:  # noqa: BLE001 - snapshot is advisory grounding only
+        pass
+    return "\n".join(lines)
+
+
+def _resolve_screen(screen: dict[str, Any] | None, elements: list[dict[str, Any]]) -> tuple[str, str, str]:
+    """Turn the frontend's screen descriptor into (level, element_name, label).
+
+    The user's current tab and selected element are context, not commands — they
+    only fill in a level/element the message leaves implicit."""
+    if not screen:
+        return "", "", ""
+    level = str(screen.get("level") or "").strip().upper()
+    if level not in {"L1", "L2", "L3", "L4"}:
+        level = ""
+    label = str(screen.get("tab_label") or screen.get("tab") or "").strip()[:60]
+    element_name = ""
+    eid = screen.get("element_id")
+    if eid:
+        element_name = next((str(e["name"]) for e in elements if e.get("id") == eid), "")
+    return level, element_name, label
+
+
+def _apply_screen_defaults(command: ChatCommand, screen_level: str, screen_element: str) -> None:
+    """Fill an omitted level/element on a read from the current screen, so a bare
+    "list" or "readiness" acts on what the user is looking at."""
+    if command.action == "list" and not command.level.strip() and screen_level:
+        command.level = screen_level
+    elif command.action == "readiness" and not command.name.strip() and not command.level.strip():
+        if screen_element:
+            command.name = screen_element
+        elif screen_level:
+            command.level = screen_level
+
+
 async def interpret_chat(project_id: str, message: str, history: list[dict[str, str]] | None = None,
-                         attachment_context: str = "", mode: str = "auto") -> ChatCommand:
+                         attachment_context: str = "", mode: str = "auto",
+                         screen: dict[str, Any] | None = None) -> ChatCommand:
     elements = c4_store.list_graph(project_id)["elements"]
     listing = "\n".join(f"- {e['level']} · {e['name']} ({e['status']})" for e in elements[:100]) or "(no elements yet)"
+    screen_level, screen_element, screen_label = _resolve_screen(screen, elements)
+    screen_line = ""
+    if screen_level or screen_element or screen_label:
+        parts = [f"view={screen_label}" if screen_label else "", f"level={screen_level}" if screen_level else "",
+                 f"element={screen_element}" if screen_element else ""]
+        screen_line = ("CURRENT SCREEN: " + " | ".join(p for p in parts if p)
+                       + "\nUse this only to fill a level or element the message leaves implicit.\n\n")
     convo = "\n".join(
         f"{(turn.get('role') or 'user').upper()}: {mask_pii(str(turn.get('text') or '').strip())[:300]}"
         for turn in (history or [])[-8:] if str(turn.get('text') or '').strip()
     )
     human = (
-        f"REQUEST MODE: {mode}\n\nPROJECT ELEMENTS:\n{listing}\n\n"
+        f"REQUEST MODE: {mode}\n\n{_PLATFORM_GUIDE}\n\n"
+        f"PROJECT SNAPSHOT (deterministic, from the database):\n{_project_snapshot(project_id, elements)}\n\n"
+        + screen_line
+        + f"PROJECT ELEMENTS:\n{listing}\n\n"
         + (f"CONVERSATION SO FAR:\n{convo}\n\n" if convo else "")
         + (f"ATTACHED FILE CONTENT:\n{mask_pii(attachment_context)}\n\n" if attachment_context else "")
         + f"USER MESSAGE:\n{mask_pii(message.strip())}\n\n"
         "Interpret into one command."
     )
     if prefers_text_routing():
-        return await _interpret_local_chat(message, mode, elements, human)
-    command = await _invoke(ChatCommand, _CHAT_SYSTEM, human)
-    forced = {"chat": "answer", "code": "code", "research": "web_search",
-              "image": "image", "document": "document"}.get(mode)
-    if forced:
-        command.action = forced
-        if forced == "web_search":
-            command.description = command.description.strip() or message.strip()
+        command = await _interpret_local_chat(message, mode, elements, human, screen_level, screen_element, history)
+    else:
+        command = await _invoke(ChatCommand, _CHAT_SYSTEM, human)
+        forced = {"chat": "answer", "code": "code", "research": "web_search",
+                  "image": "image", "document": "document"}.get(mode)
+        if forced:
+            command.action = forced
+            if forced == "web_search":
+                command.description = command.description.strip() or message.strip()
+    _apply_screen_defaults(command, screen_level, screen_element)
     return command
 
 
-async def _interpret_local_chat(message: str, mode: str, elements: list[dict], context: str) -> ChatCommand:
+async def _interpret_local_chat(message: str, mode: str, elements: list[dict], context: str,
+                                screen_level: str = "", screen_element: str = "",
+                                history: list[dict[str, str]] | None = None) -> ChatCommand:
     """Deterministic routing + free-form Gemma response, following Gemma Studio.
 
     Gemma 3 1B should not be asked to serialize the large ChatCommand schema.
@@ -508,31 +598,52 @@ async def _interpret_local_chat(message: str, mode: str, elements: list[dict], c
     if forced:
         return ChatCommand(action=forced, reply=await _local_markdown_reply(forced, context))
 
-    if re.search(r"\b(list|show|how many)\b", low):
-        return ChatCommand(action="list", level=level, reply="Here's what I found.")
-    if re.search(r"readiness|\bready\b|complete", low):
-        return ChatCommand(action="readiness", level=level, name=found, reply="Checking readiness.")
-    if re.search(r"next|what should|recommend|roll.?up|report|estimat", low):
-        return ChatCommand(action="report", reply="Here's the roll-up and next step.")
-    if re.search(r"overview|project status|progress|where am i", low):
-        return ChatCommand(action="overview", reply="Here's the project status.")
-    if re.search(r"\b(search|browse|internet|web|latest|current news)\b", low):
-        return ChatCommand(action="web_search", description=text, reply="Searching the web.")
+    # ---- writes first (strong, unambiguous intent) ----
     rename = re.search(r"\brename\s+(.+?)\s+to\s+(.+?)[?.]*$", text, re.I)
     if rename:
         return ChatCommand(action="update_element", name=rename.group(1).strip(),
                            new_name=rename.group(2).strip(), reply="Review this rename before applying.")
+    status = re.search(r"\bstatus\s+(?:of\s+.+?\s+)?to\s+(active|proposed|reviewed|draft|deprecated|baselined|done|planned)\b", low)
+    if status and found:
+        return ChatCommand(action="update_element", name=found, status=status.group(1),
+                           reply="Review this status change before applying.")
     if re.search(r"\b(delete|remove)\b", low):
         target = found or re.sub(r"^.*?\b(?:delete|remove)\b\s+", "", text, flags=re.I).rstrip("?.")
         return ChatCommand(action="delete_element", name=target, reply="Review this deletion before applying.")
-    if re.search(r"\b(create|add)\b", low) and level:
-        named = re.search(r"(?:called|named)\s+(.+?)(?:\s+under\s+|[?.]*$)", text, re.I)
-        inline = re.search(r"\b(?:create|add)\b\s+(?:an?\s+)?l[1-4]\s+(.+?)\s+(?:container|component|task|story|system|element)\b", text, re.I)
-        name = (named or inline).group(1).strip() if (named or inline) else ""
-        parent_match = re.search(r"\bunder\s+(.+?)[?.]*$", text, re.I)
-        parent = parent_match.group(1).strip() if parent_match else ""
-        return ChatCommand(action="create_element", level=level, name=name, parent=parent,
+    # A route/connection between two existing elements → create_relation. Checked
+    # before create so "add route to payments through api-gateway" isn't read as a
+    # new element; match_relation only fires when both endpoints are known.
+    relation = match_relation(text, names)
+    if relation:
+        source, target, label = relation
+        return ChatCommand(action="create_relation", name=source, target=target, label=label,
+                           reply=f"Connect “{source}” to “{target}” — Apply to confirm.")
+    created = parse_create(text, names)
+    if created and (created["name"] or created["level"] or re.match(r"^\s*(?:create|add)\b", text, re.I)):
+        return ChatCommand(action="create_element", level=created["level"], name=created["name"],
+                           parent=created["parent"], target=created["target"], label=created["label"],
                            reply="Review this new element before applying.")
+    # A bare follow-up ("Payments") after we asked for a missing detail: replay the
+    # pending create/rename intent from history with this answer as the name.
+    if history and len(text) <= 60:
+        pending = next((str(t.get("text") or "") for t in reversed(history)
+                        if t.get("role") == "user" and re.search(r"\b(create|add|new|rename)\b", str(t.get("text") or ""), re.I)), "")
+        if pending:
+            retry = parse_create(f"{pending.rstrip('?. ')} called {text.strip()}", names)
+            if retry and retry["name"]:
+                return ChatCommand(action="create_element", level=retry["level"], name=retry["name"],
+                                   parent=retry["parent"], target=retry["target"], label=retry["label"],
+                                   reply="Review this new element before applying.")
+    if re.search(r"\b(search|browse|internet|web|latest|current news)\b", low):
+        return ChatCommand(action="web_search", description=text, reply="Searching the web.")
+    # Grounded reads (overview / report / list / readiness) answer from the DB via
+    # chat.service — never the model — so status/summary questions can't hallucinate.
+    # The current screen fills an implicit level/element ("readiness" of the open one).
+    read = classify_read(text, names, screen_level, screen_element)
+    if read:
+        action, read_level, read_name = read
+        return ChatCommand(action=action, level=read_level, name=read_name,
+                           reply="Here's what I found.")
     action = "code" if re.search(r"\b(code|function|class|script|implement|debug)\b", low) else "answer"
     return ChatCommand(action=action, reply=await _local_markdown_reply(action, context))
 

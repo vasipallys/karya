@@ -39,6 +39,9 @@ class LLMSettings(BaseModel):
     local_context_window: int = Field(default=8192, ge=512, le=131_072)
     local_trust_remote_code: bool = False
     local_files_only: bool = False
+    # Warm the model at API startup (background thread) so the first call is fast.
+    # Disable for packaged/CI startups that must not touch multi-GB weights.
+    local_preload: bool = True
 
     @field_validator("provider", "model")
     @classmethod
@@ -99,6 +102,7 @@ class Settings(BaseSettings):
     llm_local_context_window: int = 8192
     llm_local_trust_remote_code: bool = False
     llm_local_files_only: bool = False
+    llm_local_preload: bool = True
     jira_instances: str = ""
     jira_write_enabled: bool = False
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
@@ -120,6 +124,7 @@ class Settings(BaseSettings):
                 local_context_window=self.llm_local_context_window,
                 local_trust_remote_code=self.llm_local_trust_remote_code,
                 local_files_only=self.llm_local_files_only,
+                local_preload=self.llm_local_preload,
             )
         except ValidationError as exc:
             raise ConfigurationError(

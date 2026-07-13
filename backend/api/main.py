@@ -20,7 +20,7 @@ from backend.graph.checkpoint import set_checkpointer
 from backend.ingest.excel import UploadError, dataframe_payload, read_upload, rows_to_stories, template_workbook
 from backend.jira.client import JiraError
 from backend.jira.registry import get_jira_registry
-from backend.llm.factory import llm_runtime_status, validate_factory_config
+from backend.llm.factory import llm_runtime_status, preload_llm, validate_factory_config
 from backend.models import (
     BatchEstimateRequest,
     ErrorPayload,
@@ -83,6 +83,9 @@ async def lifespan(app: FastAPI):
             get_settings().validate_startup()
             validate_factory_config()
             app.state.configuration_errors = []
+            # Begin loading a local model now (background daemon) so the first
+            # chat/estimation call is fast instead of a cold "loading" miss.
+            preload_llm()
         except ConfigurationError as exc:
             # Keep diagnostics endpoints alive so the UI can render the startup error.
             app.state.configuration_errors = exc.errors

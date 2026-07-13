@@ -100,6 +100,22 @@ def get_structured_llm(schema: type[SchemaT]) -> Runnable:
     return model.with_structured_output(schema, include_raw=True)
 
 
+def preload_llm() -> None:
+    """Warm the model at startup so the first user request isn't a cold miss.
+
+    Only the local in-process runtime pays a real load cost (multi-second weight
+    load + first-call kernel warmup); hosted providers are no-ops. Loading runs on
+    a background daemon thread, so this returns immediately and never blocks the
+    API's startup or health checks.
+    """
+    config = get_settings().llm
+    if config.provider.lower() not in LOCAL_PROVIDERS or not config.local_preload:
+        return
+    from backend.llm.local import start_background_load
+
+    start_background_load(get_llm())
+
+
 def llm_runtime_status() -> dict:
     if get_settings().llm.provider.lower() not in LOCAL_PROVIDERS:
         return {"status": "ready"}

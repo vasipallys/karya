@@ -69,6 +69,51 @@ def test_query_and_report_execute():
         assert report["action"] == "report" and report["mutation"] is None
 
 
+def test_complete_project_status_reads_overview_not_readiness():
+    """“give me complete project status” must answer from the DB as an overview —
+    the word “complete” must not divert it into readiness (which then asks for an
+    element name) or into a free-form model answer."""
+    pid, _, _ = _scope()
+    with TestClient(app) as client:
+        res = _chat(client, pid, "give me complete project status").json()
+        assert res["action"] == "overview"
+        assert res["mutation"] is None and "%" in res["reply"]
+
+
+def test_summary_of_all_l2_lists_from_db():
+    """“give me summary of all L2” must enumerate real L2 elements, not produce a
+    free-form (hallucinated) answer."""
+    pid, _, _ = _scope()
+    with TestClient(app) as client:
+        res = _chat(client, pid, "give me summary of all L2").json()
+        assert res["action"] == "list"
+        assert res["data"]["level"] == "L2"
+        assert any(i["name"] == "onboarding-web" for i in res["data"]["items"])
+
+
+def test_screen_context_defaults_bare_readiness_to_open_element():
+    """On the L2 screen with an element open, a bare “readiness?” checks that
+    element — the agent uses the current screen instead of asking which one."""
+    pid, l1_id, l2_id = _scope()
+    with TestClient(app) as client:
+        res = client.post(f"/projects/{pid}/chat", json={
+            "message": "how ready is it?",
+            "screen_context": {"tab": "l2arch", "tab_label": "L2 arch", "level": "L2", "element_id": l2_id},
+        }, headers=ADMIN).json()
+        assert res["action"] == "readiness"
+        assert res["data"]["name"] == "onboarding-web"
+
+
+def test_screen_context_defaults_bare_list_to_open_level():
+    pid, _, _ = _scope()
+    with TestClient(app) as client:
+        res = client.post(f"/projects/{pid}/chat", json={
+            "message": "show me everything here",
+            "screen_context": {"tab": "l2arch", "tab_label": "L2 arch", "level": "L2"},
+        }, headers=ADMIN).json()
+        assert res["action"] == "list" and res["data"]["level"] == "L2"
+
+
 def test_readiness_of_named_element():
     pid, _, _ = _scope()
     with TestClient(app) as client:
@@ -167,6 +212,83 @@ def test_standalone_relation_between_existing_elements():
         client.post(f"/projects/{pid}/chat/apply", json={"mutation": proposal["mutation"]}, headers=ADMIN)
         relations = c4_store.list_graph(pid)["relations"]
         assert any(r["source_id"] == l2_id and r["target_id"] == gw["id"] for r in relations)
+
+
+def test_route_to_target_through_intermediary_sets_direction():
+    """“add route to payments through api-gateway” connects api-gateway → payments:
+    the element named after through/via is the source, not the target."""
+    pid, l1_id, _ = _scope()
+    gw = c4_store.create_element(pid, C4ElementCreate(level="L2", name="api-gateway", parent_id=l1_id))
+    pay = c4_store.create_element(pid, C4ElementCreate(level="L2", name="payments", parent_id=l1_id))
+    with TestClient(app) as client:
+        proposal = _chat(client, pid, "add route to payments through api-gateway").json()
+        mutation = proposal["mutation"]
+        assert mutation["action"] == "create_relation"
+        assert mutation["name"] == "api-gateway" and mutation["target"] == "payments"
+        client.post(f"/projects/{pid}/chat/apply", json={"mutation": mutation}, headers=ADMIN)
+        relations = c4_store.list_graph(pid)["relations"]
+        assert any(r["source_id"] == gw["id"] and r["target_id"] == pay["id"] for r in relations)
+
+
+def test_route_between_two_elements():
+    pid, l1_id, l2_id = _scope()
+    gw = c4_store.create_element(pid, C4ElementCreate(level="L2", name="api-gateway", parent_id=l1_id))
+    with TestClient(app) as client:
+        proposal = _chat(client, pid, "add a connection between onboarding-web and api-gateway").json()
+        mutation = proposal["mutation"]
+        assert mutation["action"] == "create_relation"
+        assert mutation["name"] == "onboarding-web" and mutation["target"] == "api-gateway"
+
+
+def test_route_to_target_from_source_with_level_qualifier():
+    """“add new route to L2 payments from api-gateway” connects api-gateway →
+    payments: `from` names the source, and the `L2` qualifier on the target is
+    stripped during name resolution (this must not be read as create_element)."""
+    pid, l1_id, _ = _scope()
+    gw = c4_store.create_element(pid, C4ElementCreate(level="L2", name="api-gateway", parent_id=l1_id))
+    pay = c4_store.create_element(pid, C4ElementCreate(level="L2", name="payments", parent_id=l1_id))
+    with TestClient(app) as client:
+        proposal = _chat(client, pid, "add new route to L2 payments from api-gateway").json()
+        mutation = proposal["mutation"]
+        assert mutation["action"] == "create_relation"
+        assert mutation["name"] == "api-gateway" and mutation["target"] == "payments"
+        client.post(f"/projects/{pid}/chat/apply", json={"mutation": mutation}, headers=ADMIN)
+        relations = c4_store.list_graph(pid)["relations"]
+        assert any(r["source_id"] == gw["id"] and r["target_id"] == pay["id"] for r in relations)
+
+
+def test_quoted_name_create_with_connect_route_in_one_message():
+    """“Add a "Payments" as a new L3 Container and connect the route through
+    api-gateway…” must extract the quoted inline name (not ask for it) and wire
+    the new element to api-gateway on apply. Single L2 so the L3 parent is
+    unambiguous, isolating the name+relation extraction."""
+    project = create_project(ProjectCreate(name="Digital banking"))
+    pid = project["id"]
+    l1 = c4_store.create_element(pid, C4ElementCreate(level="L1", name="Digital banking"))
+    gw = c4_store.create_element(pid, C4ElementCreate(level="L2", name="api-gateway", parent_id=l1["id"]))
+    with TestClient(app) as client:
+        proposal = _chat(client, pid, 'Add a "Payments" as a new L3 Container and connect the route through api-gateway, name the route as Payments').json()
+        mutation = proposal["mutation"]
+        assert mutation["action"] == "create_element"
+        assert mutation["level"] == "L3" and mutation["name"] == "Payments"
+        assert mutation["target"] == "api-gateway"
+        applied = client.post(f"/projects/{pid}/chat/apply", json={"mutation": mutation}, headers=ADMIN)
+        assert applied.status_code == 200
+        graph = c4_store.list_graph(pid)
+        payments = next(e for e in graph["elements"] if e["name"] == "Payments")
+        assert payments["level"] == "L3" and payments["parent_id"] == gw["id"]
+        assert any(r["source_id"] == payments["id"] and r["target_id"] == gw["id"] for r in graph["relations"])
+
+
+def test_add_new_element_as_level_extracts_name():
+    """“add a new L2 container called Payments” and the name-before-level form both
+    resolve the name rather than asking for it."""
+    pid, _, _ = _scope()
+    with TestClient(app) as client:
+        a = _chat(client, pid, 'add a new L2 container called Payments').json()
+        assert a["mutation"]["name"] == "Payments" and a["mutation"]["level"] == "L2"
+        b = _chat(client, pid, 'add "Reporting" as a new L2 container').json()
+        assert b["mutation"]["name"] == "Reporting" and b["mutation"]["level"] == "L2"
 
 
 def test_followup_answer_uses_conversation_history():

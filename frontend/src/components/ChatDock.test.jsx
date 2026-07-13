@@ -100,7 +100,7 @@ describe('ChatDock', () => {
     type('hello')
 
     await waitFor(() => expect(screen.getByText('fallback reply')).toBeInTheDocument())
-    expect(api.chat).toHaveBeenCalledWith('p1', 'hello', expect.any(Array))
+    expect(api.chat).toHaveBeenCalledWith('p1', 'hello', expect.any(Array), null, [], 'auto', null)
   })
 
   it('dictates a voice request straight into the chat', async () => {
@@ -112,7 +112,9 @@ describe('ChatDock', () => {
     expect(rec.started).toBe(true)
 
     rec.onresult({ results: [[{ transcript: 'create a payments container' }]] })
-    await waitFor(() => expect(api.chatStream).toHaveBeenCalledWith('p1', 'create a payments container', expect.any(Array), expect.any(Function)))
+    await waitFor(() => expect(api.chatStream).toHaveBeenCalledWith(
+      'p1', 'create a payments container', expect.any(Array), expect.any(Function), undefined, null, [], 'auto', null,
+    ))
   })
 
   it('deep-links listed elements to their workspaces', async () => {
@@ -162,7 +164,18 @@ describe('ChatDock', () => {
     fireEvent.keyDown(screen.getByPlaceholderText('Describe code to write or review…'), { key: 'Enter' })
 
     await waitFor(() => expect(api.chatStream).toHaveBeenCalledWith(
-      'p1', 'make a hook', expect.any(Array), expect.any(Function), undefined, null, [], 'code',
+      'p1', 'make a hook', expect.any(Array), expect.any(Function), undefined, null, [], 'code', null,
+    ))
+  })
+
+  it('forwards the current screen context so bare reads act on the open screen', async () => {
+    const screenContext = { tab: 'l2arch', tab_label: 'L2 arch', level: 'L2', element_id: 'e9' }
+    renderDock({ screenContext })
+    openDock()
+    type('how ready is it?')
+
+    await waitFor(() => expect(api.chatStream).toHaveBeenCalledWith(
+      'p1', 'how ready is it?', expect.any(Array), expect.any(Function), undefined, null, [], 'auto', screenContext,
     ))
   })
 })

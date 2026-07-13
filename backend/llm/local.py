@@ -32,10 +32,12 @@ _load_state: dict[str, Any] = {"status": "not_started", "started_at": None, "loa
 
 
 class LocalHuggingFaceChatModel(BaseChatModel):
-    """A production-oriented Transformers adapter with lazy model loading.
+    """A production-oriented Transformers adapter with background model loading.
 
-    Loading is deferred until the first inference so health/config endpoints remain
-    responsive and startup does not download multi-gigabyte model artifacts.
+    Loading always runs on a background daemon thread so health/config endpoints
+    stay responsive and neither startup nor the request path blocks on multi-GB
+    weights. It is kicked off at API startup when ``LLM_LOCAL_PRELOAD`` is on (the
+    default) so the first call is fast, otherwise lazily on the first inference.
     Generation is serialized because a single Transformers model instance is not
     safe to mutate concurrently.
     """
@@ -166,6 +168,15 @@ class _TransformersRuntime:
         self.model.eval()
         self.input_device = next(self.model.parameters()).device
 
+    def warmup(self) -> None:
+        """Run one throwaway token so kernel/graph init happens off the request
+        path. Best-effort — a warmup failure must not fail the load."""
+        try:
+            self.generate([{"role": "user", "content": "ok"}], temperature=0.0,
+                          max_new_tokens=1, context_window=32, stop=[])
+        except Exception:  # noqa: BLE001 - warmup is advisory only
+            logger.debug("Local LLM warmup pass skipped", exc_info=True)
+
     def generate(self, messages: list[dict[str, str]], *, temperature: float, max_new_tokens: int,
                  context_window: int, stop: list[str]) -> str:
         with self.lock, self.torch.inference_mode():
@@ -264,8 +275,11 @@ def start_background_load(model: LocalHuggingFaceChatModel) -> None:
         logger.info("Local LLM loading started: model=%s device=%s dtype=%s cache=%s",
                     model.model_name, model.device, model.dtype, model.cache_dir or "Hugging Face default")
         try:
-            _runtime_cached(model.model_name, model.token, model.device, model.dtype, model.revision,
-                            model.cache_dir, model.trust_remote_code, model.local_files_only)
+            runtime = _runtime_cached(model.model_name, model.token, model.device, model.dtype, model.revision,
+                                      model.cache_dir, model.trust_remote_code, model.local_files_only)
+            warmup = getattr(runtime, "warmup", None)
+            if callable(warmup):
+                warmup()  # first-token kernel init off the request path
             with _load_lock:
                 _load_state.update(status="ready", loaded_at=time.time(), error=None)
             logger.info("Local LLM ready: model=%s load_seconds=%.1f", model.model_name, time.perf_counter() - started)

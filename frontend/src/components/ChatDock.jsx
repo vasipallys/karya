@@ -24,7 +24,7 @@ const CHAT_MODES = [
 
 // Floating conversational assistant: query / report over the project, and propose
 // C4 changes that the user applies with one click (writes need platform.edit).
-export default function ChatDock({ projectId, onChanged, onOpenElement }) {
+export default function ChatDock({ projectId, onChanged, onOpenElement, screenContext = null }) {
   const toast = useToast()
   const { can } = useAuth()
   const canEdit = can('platform.edit')
@@ -141,10 +141,10 @@ export default function ChatDock({ projectId, onChanged, onOpenElement }) {
         }
       }
       if (chatMode === 'auto' && !conversationId && !attachments.length) {
-        await api.chatStream(projectId, message, history, handleEvent)
+        await api.chatStream(projectId, message, history, handleEvent, undefined, null, [], 'auto', screenContext)
       } else {
         await api.chatStream(projectId, message, history, handleEvent, undefined, conversationId,
-          attachments.map((a) => a.id), chatMode)
+          attachments.map((a) => a.id), chatMode, screenContext)
       }
       if (!done) throw new Error('The assistant stream ended unexpectedly.')
     } catch (err) {
@@ -152,8 +152,8 @@ export default function ChatDock({ projectId, onChanged, onOpenElement }) {
         // Streaming unavailable — fall back to the plain endpoint.
         try {
           const result = chatMode === 'auto' && !conversationId && !attachments.length
-            ? await api.chat(projectId, message, history)
-            : await api.chat(projectId, message, history, conversationId, attachments.map((a) => a.id), chatMode)
+            ? await api.chat(projectId, message, history, null, [], 'auto', screenContext)
+            : await api.chat(projectId, message, history, conversationId, attachments.map((a) => a.id), chatMode, screenContext)
           setConversationId(result.conversation_id); setAttachments([]); pushAssistant(result)
         }
         catch (inner) {

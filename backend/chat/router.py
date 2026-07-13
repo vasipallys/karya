@@ -37,6 +37,9 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
     attachment_ids: list[str] = Field(default_factory=list, max_length=10)
     mode: Literal["auto", "chat", "code", "research", "image", "document"] = "auto"
+    # The screen the user is on {tab, tab_label, level, element_id} — grounds/defaults
+    # an implicit level or element; never an instruction on its own.
+    screen_context: dict[str, Any] | None = None
 
 
 class ChatApplyRequest(BaseModel):
@@ -119,7 +122,7 @@ async def chat(project_id: str, payload: ChatRequest, request: Request) -> dict[
     chat_store.attach_to_message(payload.attachment_ids, user_message["id"])
     try:
         command = await agents.interpret_chat(project_id, payload.message, stored_history or payload.history,
-                                              attachment_text, payload.mode)
+                                              attachment_text, payload.mode, payload.screen_context)
     except LocalModelLoadingError as exc:
         raise HTTPException(status_code=503, detail={"code": "model_loading", "message": str(exc)}) from exc
     except LocalModelInferenceError as exc:
@@ -146,7 +149,8 @@ async def chat_stream(project_id: str, payload: ChatRequest, request: Request) -
         user_message = chat_store.add_message(convo["id"], "user", payload.message, {"attachments": attachment_meta})
         chat_store.attach_to_message(payload.attachment_ids, user_message["id"])
         state = {"project_id": project_id, "message": payload.message, "mode": payload.mode,
-                 "history": stored_history or payload.history, "attachment_context": attachment_text}
+                 "history": stored_history or payload.history, "attachment_context": attachment_text,
+                 "screen": payload.screen_context}
         try:
             async for update in get_chat_graph().astream(state, stream_mode="updates"):
                 for node, values in update.items():

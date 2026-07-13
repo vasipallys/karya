@@ -54,10 +54,14 @@ requires custom repository code.
 
 ## Runtime behavior
 
-- Model loading is lazy: normal platform APIs start immediately, and the first AI
-  request starts a daemon loader. `/health` reports `llm.status` as `not_started`,
-  `loading`, `ready`, or `error`; chat returns a retryable response while loading
-  instead of holding the request open and appearing frozen.
+- Model loading runs on a background daemon thread and never blocks startup or the
+  request path. With `LLM_LOCAL_PRELOAD=true` (the default) the loader starts at API
+  startup — plus a one-token warmup so the first real call skips kernel init — so the
+  model is usually `ready` by the time you interact. Set `LLM_LOCAL_PRELOAD=false` to
+  defer loading to the first AI request (for packaged/CI startups that must not touch
+  multi-GB weights). `/health` reports `llm.status` as `not_started`, `loading`,
+  `ready`, or `error`; chat returns a retryable response while loading instead of
+  holding the request open and appearing frozen.
 - During `loading`, watch the API terminal for Hugging Face/Transformers progress.
   A subsequent AI request reports elapsed loading seconds; retry after health is
   `ready`.
