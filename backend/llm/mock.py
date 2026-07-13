@@ -608,7 +608,7 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
         )
 
     if schema is ChatCommand:
-        from backend.ai.nl import classify_read, match_relation, parse_create
+        from backend.ai.nl import classify_read, list_status_filter, match_relation, parse_create
 
         msg_match = re.search(r"USER MESSAGE:\s*(.+?)\n\nInterpret", text, re.DOTALL)
         msg = (msg_match.group(1) if msg_match else text).strip()
@@ -689,7 +689,9 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
             read = classify_read(msg, names, screen_level, screen_element)
             if read:
                 action, read_level, read_name = read
-                return ChatCommand(action=action, level=read_level, name=read_name, reply="Here's what I found.")
+                status = list_status_filter(msg) if action == "list" else ""
+                return ChatCommand(action=action, level=read_level, name=read_name, status=status,
+                                   reply="Here's what I found.")
             if "help" in low or "what can you" in low:
                 return ChatCommand(action="help", reply="")
             if re.search(r"\b(search|browse|internet|web|latest|current news)\b", low):

@@ -19,8 +19,11 @@ _LEADING_FILLER = re.compile(r"^(?:\s*(?:the|a|an|new|l[1-4])\b)+", re.IGNORECAS
 
 _LEVEL_RE = re.compile(r"\bl([1-4])\b", re.IGNORECASE)
 _TYPE_WORD = re.compile(r"element|container|component|service|module|task|stor(?:y|ies)|initiative|epic|node", re.IGNORECASE)
-# Verbs that ask to enumerate the model, as opposed to a whole-project question.
-_ENUMERATE = re.compile(r"\b(list|show|display|enumerate|summar(?:y|ise|ize|ies)|how many|which)\b", re.IGNORECASE)
+# Verbs/nouns that ask to enumerate the model, as opposed to a whole-project question.
+_ENUMERATE = re.compile(r"\b(list|show|display|enumerate|summar(?:y|ise|ize|ies)|how many|which|items?|everything)\b", re.IGNORECASE)
+# Status words a "list" request may filter on; "pending" maps to the proposed status.
+_STATUS_WORDS = {"pending": "proposed", "proposed": "proposed", "draft": "proposed",
+                 "active": "active", "reviewed": "reviewed", "baselined": "baselined"}
 _REPORT = re.compile(r"\bnext\b|what should i|recommend|roll.?up|\breport\b|estimat", re.IGNORECASE)
 _READINESS = re.compile(r"readiness|how ready|are we ready|is it ready", re.IGNORECASE)
 _OVERVIEW = re.compile(r"overview|project status|\bstatus\b|progress|where am i|how are we|health|state of|summar(?:y|ise|ize)", re.IGNORECASE)
@@ -206,3 +209,13 @@ def classify_read(text: str, names: list[str], screen_level: str = "", screen_el
     if _ENUMERATE.search(low) and screen_level:
         return ("list", screen_level, "")
     return None
+
+
+def list_status_filter(text: str) -> str:
+    """The element status a list request wants to filter on ("pending items" →
+    proposed), or "" for the default (non-proposed) view."""
+    low = text.lower()
+    for word, status in _STATUS_WORDS.items():
+        if re.search(rf"\b{word}\b", low):
+            return status
+    return ""

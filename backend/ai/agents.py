@@ -10,7 +10,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.ai.masking import mask_pii
-from backend.ai.nl import classify_read, match_relation, parse_create
+from backend.ai.nl import classify_read, list_status_filter, match_relation, parse_create
 from backend.ai.schemas import ChatCommand, C4Scaffold, FieldSummary, L1BaselineDraft, L2Draft, L3Draft, L4Draft, NarrativeOutput, OrchestratorPlan, StaffingProposal, StoryDecomposition
 from backend.c4 import store as c4_store
 from backend.graph.nodes import _parse_structured_result
@@ -642,7 +642,8 @@ async def _interpret_local_chat(message: str, mode: str, elements: list[dict], c
     read = classify_read(text, names, screen_level, screen_element)
     if read:
         action, read_level, read_name = read
-        return ChatCommand(action=action, level=read_level, name=read_name,
+        status = list_status_filter(text) if action == "list" else ""
+        return ChatCommand(action=action, level=read_level, name=read_name, status=status,
                            reply="Here's what I found.")
     action = "code" if re.search(r"\b(code|function|class|script|implement|debug)\b", low) else "answer"
     return ChatCommand(action=action, reply=await _local_markdown_reply(action, context))

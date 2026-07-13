@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 import logging
@@ -133,6 +134,33 @@ def _normalize_messages(messages: list[BaseMessage]) -> list[dict[str, str]]:
     return normalized
 
 
+def _reject_unsupported_model_dir(model_name: str) -> None:
+    """Fail fast with actionable guidance for a physical folder the Transformers
+    runtime can't load — most commonly a GGUF (llama.cpp / LM Studio) export."""
+    if not os.path.isdir(model_name):
+        return
+    try:
+        entries = os.listdir(model_name)
+    except OSError:
+        return
+    has_gguf = any(name.lower().endswith(".gguf") for name in entries)
+    has_config = "config.json" in entries
+    if has_gguf and not has_config:
+        raise RuntimeError(
+            f"'{model_name}' looks like a GGUF model (the llama.cpp / LM Studio format), which the in-process "
+            "Transformers runtime cannot load. Either point LLM_MODEL at a standard Hugging Face checkpoint "
+            "folder (config.json + *.safetensors + tokenizer files), or serve the GGUF from LM Studio / "
+            "Ollama / llama.cpp and use LLM_PROVIDER=compatible with LLM_BASE_URL (e.g. "
+            "http://localhost:1234/v1) instead."
+        )
+    if not has_config:
+        raise RuntimeError(
+            f"'{model_name}' is not a loadable Transformers checkpoint — no config.json was found. Point "
+            "LLM_MODEL at a folder containing config.json, the model weights (*.safetensors), and the "
+            "tokenizer files."
+        )
+
+
 class _TransformersRuntime:
     def __init__(self, model_name: str, token: str | None, device: str, dtype: str, revision: str,
                  cache_dir: str | None, trust_remote_code: bool, local_files_only: bool) -> None:
@@ -145,6 +173,8 @@ class _TransformersRuntime:
                 "`python -m pip install -r requirements-local.txt`."
             ) from exc
 
+        _reject_unsupported_model_dir(model_name)
+
         from transformers.utils import logging as transformers_logging
         # Loading runs outside the request path; keep Transformers/tqdm progress
         # visible in the API terminal so operators can distinguish work from a hang.
@@ -154,7 +184,20 @@ class _TransformersRuntime:
         auth = token or None
         common = dict(revision=revision, cache_dir=cache_dir, token=auth,
                       trust_remote_code=trust_remote_code, local_files_only=local_files_only)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, **common)
+        # Prefer the fast tokenizer, but fall back to the slow one — some on-disk
+        # models (e.g. Qwen checkpoints) ship without a fast tokenizer.json. If both
+        # fail for a missing backend, point at the extras that provide it.
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name, **common)
+        except Exception:  # noqa: BLE001 - the slow path below surfaces any real error
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False, **common)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    "Failed to build the tokenizer for this model. If the underlying error mentions "
+                    "'sentencepiece' or 'tiktoken', install the local extras with "
+                    "`python -m pip install -r requirements-local.txt` (they now include both)."
+                ) from exc
         resolved_device = _resolve_device(torch, device)
         torch_dtype = _resolve_dtype(torch, dtype, resolved_device)
         # ``torch_dtype`` remains compatible with the minimum supported

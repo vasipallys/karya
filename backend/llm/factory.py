@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from functools import lru_cache
 from typing import TypeVar
 
@@ -18,7 +19,11 @@ from backend.config import ConfigurationError, get_settings
 OPENAI_COMPATIBLE = {"moonshot", "deepseek", "openrouter", "ollama", "vllm", "compatible"}
 NATIVE_PROVIDERS = {"anthropic", "google_genai", "openai", "groq", "mistral"}
 OFFLINE_PROVIDERS = {"mock"}
-LOCAL_PROVIDERS = {"local"}
+# In-process Transformers runtime. "local" resolves LLM_MODEL as a Hugging Face
+# repo id (may download); "localpath" resolves it as a physical model directory on
+# disk and loads strictly offline (no hub access).
+LOCAL_PROVIDERS = {"local", "localpath"}
+PATH_PROVIDERS = {"localpath"}
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
@@ -33,6 +38,10 @@ def validate_factory_config() -> None:
         errors.append(f"LLM_BASE_URL is required for provider '{config.provider}'")
     if provider not in OFFLINE_PROVIDERS | LOCAL_PROVIDERS and not config.api_key.get_secret_value():
         errors.append("LLM_API_KEY is required")
+    if provider in PATH_PROVIDERS and not os.path.isdir(config.model):
+        errors.append(
+            f"LLM_MODEL must be an existing local model directory for provider 'localpath' (got '{config.model}')"
+        )
     if errors:
         raise ConfigurationError(errors)
 
@@ -50,6 +59,8 @@ def get_llm() -> BaseChatModel:
     if provider in LOCAL_PROVIDERS:
         from backend.llm.local import LocalHuggingFaceChatModel
 
+        # A physical-path model is inherently offline — never reach the hub for it.
+        local_files_only = config.local_files_only or provider in PATH_PROVIDERS
         return LocalHuggingFaceChatModel(
             model_name=config.model,
             token=config.api_key.get_secret_value() or None,
@@ -61,7 +72,7 @@ def get_llm() -> BaseChatModel:
             cache_dir=config.local_cache_dir,
             context_window=config.local_context_window,
             trust_remote_code=config.local_trust_remote_code,
-            local_files_only=config.local_files_only,
+            local_files_only=local_files_only,
         )
     common = {
         "model": config.model,

@@ -166,11 +166,18 @@ def _overview(project_id: str, command: ChatCommand) -> dict[str, Any]:
 def _list(project_id: str, command: ChatCommand) -> dict[str, Any]:
     level = _norm_level(command.level)
     items = [e for e in _elements(project_id) if not level or e["level"] == level]
-    items = [e for e in items if e["status"] != "proposed"] or items
+    # A status filter ("pending"→proposed) overrides the default of hiding proposals.
+    wanted = command.status.strip().lower()
+    if wanted:
+        items = [e for e in items if e["status"].lower() == wanted]
+    else:
+        items = [e for e in items if e["status"] != "proposed"] or items
     rows = [{"id": e["id"], "level": e["level"], "name": e["name"], "status": e["status"]} for e in items]
     scope = level or "all levels"
-    reply = f"You have {len(rows)} element(s) at {scope}." if rows else f"No elements found at {scope} yet."
-    return {"reply": reply, "action": "list", "data": {"level": level, "items": rows}, "mutation": None}
+    label = f"{wanted} " if wanted else ""
+    reply = (f"You have {len(rows)} {label}element(s) at {scope}." if rows
+             else f"No {label}elements found at {scope}.")
+    return {"reply": reply, "action": "list", "data": {"level": level, "status": wanted, "items": rows}, "mutation": None}
 
 
 def _readiness(project_id: str, command: ChatCommand) -> dict[str, Any]:

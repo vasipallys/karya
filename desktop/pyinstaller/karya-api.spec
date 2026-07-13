@@ -24,6 +24,8 @@ for package in [
 if os.getenv("KARYA_BUNDLE_LOCAL_LLM", "").lower() in {"1", "true", "yes"}:
     for package in ["transformers", "accelerate", "safetensors", "torch"]:
         hiddenimports.extend(collect_submodules(package))
+    # Tokenizer backends transformers imports dynamically (SentencePiece / tiktoken).
+    hiddenimports.extend(["sentencepiece", "tiktoken", "tiktoken_ext", "tiktoken_ext.openai_public"])
 
 a = Analysis(
     [str(ROOT / "desktop" / "backend_launcher.py")],

@@ -80,6 +80,21 @@ def test_complete_project_status_reads_overview_not_readiness():
         assert res["mutation"] is None and "%" in res["reply"]
 
 
+def test_pending_items_lists_proposed_from_db():
+    """“give me pending items in L1” lists proposed L1 elements from the DB —
+    it must not fall through to a free-form (hallucinated) answer."""
+    pid, l1_id, _ = _scope()
+    # A proposed L1 sibling and an active one; only the proposed should show.
+    c4_store.create_element(pid, C4ElementCreate(level="L1", name="Payments platform", status="proposed"))
+    with TestClient(app) as client:
+        res = _chat(client, pid, "give me pending items in L1").json()
+        assert res["action"] == "list"
+        assert res["data"]["level"] == "L1" and res["data"]["status"] == "proposed"
+        names = {i["name"] for i in res["data"]["items"]}
+        assert "Payments platform" in names and "Digital banking" not in names
+        assert "pending" not in res["reply"].lower() or "proposed" in res["reply"].lower()
+
+
 def test_summary_of_all_l2_lists_from_db():
     """“give me summary of all L2” must enumerate real L2 elements, not produce a
     free-form (hallucinated) answer."""

@@ -5,3 +5,7 @@ transformers>=4.50,<6
 torch>=2.4,<3
 accelerate>=1.2,<2
 safetensors>=0.4.5,<1
+# Tokenizer backends: Llama/Gemma SentencePiece models and Qwen tiktoken-style
+# models can't build their tokenizer without these.
+sentencepiece>=0.2,<1
+tiktoken>=0.7,<1

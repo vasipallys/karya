@@ -45,6 +45,75 @@ def test_local_provider_needs_no_api_key(local_config):
     assert get_settings().llm.model == "google/gemma-3-1b-it"
 
 
+def test_localpath_provider_requires_an_existing_directory(monkeypatch):
+    directory = Path(tempfile.mkdtemp(prefix="karya-localpath-"))
+    monkeypatch.setenv("LLM_PROVIDER", "localpath")
+    monkeypatch.setenv("LLM_MODEL", str(directory / "missing-model"))
+    monkeypatch.setenv("LLM_API_KEY", "")
+    get_settings.cache_clear()
+    factory.get_llm.cache_clear()
+    try:
+        with pytest.raises(ConfigurationError, match="localpath"):
+            factory.validate_factory_config()
+    finally:
+        get_settings.cache_clear()
+        factory.get_llm.cache_clear()
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_localpath_provider_loads_model_from_disk_offline(monkeypatch):
+    """LLM_MODEL as a physical path builds the in-process runtime, forced offline
+    (local_files_only) with no API key, and routed like the other local models."""
+    directory = Path(tempfile.mkdtemp(prefix="karya-localpath-"))
+    (directory / "config.json").write_text("{}")  # a real directory with a file
+    monkeypatch.setenv("LLM_PROVIDER", "localpath")
+    monkeypatch.setenv("LLM_MODEL", str(directory))
+    monkeypatch.setenv("LLM_API_KEY", "")
+    get_settings.cache_clear()
+    factory.get_llm.cache_clear()
+    try:
+        factory.validate_factory_config()  # directory exists -> no error
+        model = factory.get_llm()
+        assert model.model_name == str(directory)
+        assert model.local_files_only is True
+        assert factory.prefers_text_routing() is True  # small local model -> deterministic routing
+    finally:
+        get_settings.cache_clear()
+        factory.get_llm.cache_clear()
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_gguf_directory_is_rejected_with_actionable_guidance():
+    """A GGUF folder (llama.cpp/LM Studio format) can't run under the Transformers
+    runtime — fail fast pointing at an HF checkpoint or an OpenAI-compatible server."""
+    directory = Path(tempfile.mkdtemp(prefix="karya-gguf-"))
+    try:
+        (directory / "Qwen3.5-9B-Q4_K_M.gguf").write_bytes(b"GGUF")
+        with pytest.raises(RuntimeError, match="GGUF"):
+            local._reject_unsupported_model_dir(str(directory))
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_directory_without_config_is_rejected():
+    directory = Path(tempfile.mkdtemp(prefix="karya-noconfig-"))
+    try:
+        (directory / "readme.txt").write_text("no model here")
+        with pytest.raises(RuntimeError, match="config.json"):
+            local._reject_unsupported_model_dir(str(directory))
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_standard_checkpoint_directory_is_accepted():
+    directory = Path(tempfile.mkdtemp(prefix="karya-ckpt-"))
+    try:
+        (directory / "config.json").write_text("{}")
+        local._reject_unsupported_model_dir(str(directory))  # must not raise
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
 def test_local_config_rejects_unsafe_shape(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "local")
     monkeypatch.setenv("LLM_MODEL", "google/gemma-3-1b-it")

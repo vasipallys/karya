@@ -32,6 +32,44 @@ LLM_LOCAL_FILES_ONLY=false
 LLM_LOCAL_TRUST_REMOTE_CODE=false
 ```
 
+### Loading a model already on disk (`localpath`)
+
+If you have downloaded a model to a folder yourself (a directory with
+`config.json`, weights, and tokenizer files), point Karya straight at it — no
+Hugging Face access and no API key:
+
+```dotenv
+LLM_PROVIDER=localpath
+LLM_MODEL=C:/mydrive/tools/SLM/qwen1B/1
+# LLM_LOCAL_TRUST_REMOTE_CODE=true   # only if the model ships custom code (some Qwen builds)
+```
+
+`localpath` reuses the same in-process runtime as `local` but treats `LLM_MODEL`
+as a physical directory and forces offline loading (`local_files_only`). Startup
+fails fast with a clear error if the directory does not exist. All the other
+`LLM_LOCAL_*` knobs (device, dtype, context window, preload) apply unchanged. The
+fast tokenizer is used when present and falls back to the slow tokenizer
+automatically for checkpoints that ship without one. `npm run api:setup:local-llm`
+is not needed for `localpath` since nothing is downloaded.
+
+> **The folder must be a Hugging Face checkpoint**, i.e. it contains `config.json`,
+> the weights (`*.safetensors`), and the tokenizer files. **GGUF folders are not
+> supported** — GGUF is the llama.cpp / LM Studio quantized format, which the
+> in-process Transformers runtime can't run, and Karya rejects such a folder with a
+> clear message. To use a GGUF model, serve it from **LM Studio / Ollama /
+> llama.cpp** and point Karya at that OpenAI-compatible endpoint instead:
+>
+> ```dotenv
+> LLM_PROVIDER=compatible
+> LLM_BASE_URL=http://localhost:1234/v1   # LM Studio's local server
+> LLM_MODEL=qwen2.5-7b-instruct
+> LLM_API_KEY=lm-studio                   # any non-empty placeholder
+> ```
+>
+> Tokenizer note: SentencePiece models (Llama/Gemma) and tiktoken-style models
+> (Qwen) need the `sentencepiece` / `tiktoken` packages — both are included in
+> `requirements-local.txt`.
+
 After saving `backend/.env`, perform the one-time download and validation:
 
 ```powershell
