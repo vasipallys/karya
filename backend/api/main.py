@@ -20,6 +20,7 @@ from backend.graph.checkpoint import set_checkpointer
 from backend.ingest.excel import UploadError, dataframe_payload, read_upload, rows_to_stories, template_workbook
 from backend.jira.client import JiraError
 from backend.jira.registry import get_jira_registry
+from backend.llm.local import LocalModelInferenceError, LocalModelLoadingError
 from backend.llm.factory import llm_runtime_status, preload_llm, validate_factory_config
 from backend.models import (
     BatchEstimateRequest,
@@ -165,6 +166,18 @@ async def jira_error(_: Request, exc: JiraError) -> JSONResponse:
 @app.exception_handler(UploadError)
 async def upload_error(_: Request, exc: UploadError) -> JSONResponse:
     return error_response("parse_error", str(exc), 400)
+
+
+@app.exception_handler(LocalModelLoadingError)
+async def local_model_loading_error(_: Request, exc: LocalModelLoadingError) -> JSONResponse:
+    # The local model loads on a background thread; requests during that window
+    # should be retried, not surfaced as a 500.
+    return error_response("model_loading", str(exc), 503, retryable=True)
+
+
+@app.exception_handler(LocalModelInferenceError)
+async def local_model_inference_error(_: Request, exc: LocalModelInferenceError) -> JSONResponse:
+    return error_response("model_inference_error", str(exc), 502, retryable=True)
 
 
 @app.get("/health")
