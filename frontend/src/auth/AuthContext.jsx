@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { api } from '../api/client'
 import { can as roleCan } from './permissions'
 
 const STORAGE_KEY = 'karya.auth.user'
@@ -29,13 +30,28 @@ export function AuthProvider({ children }) {
   const signIn = useCallback((nextUser) => setUser(nextUser), [])
   const signOut = useCallback(() => setUser(null), [])
 
+  const refreshAccess = useCallback(() => {
+    if (!user?.staff_id || !api.myAccess) return Promise.resolve()
+    return api.myAccess().then((access) => setUser((current) => current?.staff_id === access.id ? {
+      ...current, role: access.role, page_permissions: access.page_permissions,
+    } : current)).catch(() => {})
+  }, [user?.staff_id])
+
+  useEffect(() => {
+    if (!user?.staff_id) return undefined
+    refreshAccess()
+    window.addEventListener('focus', refreshAccess)
+    return () => window.removeEventListener('focus', refreshAccess)
+  }, [user?.staff_id, refreshAccess])
+
   const value = useMemo(() => ({
     user,
     role: user?.role || null,
     signIn,
     signOut,
-    can: (capability) => (user ? roleCan(user.role, capability) : false),
-  }), [user, signIn, signOut])
+    can: (capability) => (user ? roleCan(user.role, capability, user.page_permissions) : false),
+    refreshAccess,
+  }), [user, signIn, signOut, refreshAccess])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

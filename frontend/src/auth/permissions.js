@@ -18,12 +18,26 @@ export const ROLE_LABELS = {
 
 const ROLE_CAPS = {
   admin: ['*'],
-  manager: ['admin', 'admin.reporting', 'admin.resources', 'platform.create', 'platform.edit'],
-  contributor: ['platform.create', 'platform.edit'],
-  viewer: [],
+  manager: ['admin', 'admin.reporting', 'admin.resources', 'page.platforms', 'page.workspace', 'page.ask_ai', 'page.guide', 'platform.create', 'platform.edit'],
+  contributor: ['page.platforms', 'page.workspace', 'page.ask_ai', 'page.guide', 'platform.create', 'platform.edit'],
+  viewer: ['page.platforms', 'page.workspace', 'page.ask_ai', 'page.guide'],
 }
 
-export function can(role, capability) {
+const CAPABILITY_PAGE = {
+  'page.platforms': 'platforms',
+  'page.workspace': 'workspace',
+  'page.ask_ai': 'ask_ai',
+  'page.guide': 'guide',
+  'admin.access': 'admin_access',
+  'admin.reporting': 'admin_reporting',
+  'admin.resources': 'admin_resources',
+  'admin.integrations': 'admin_integrations',
+}
+
+export function can(role, capability, pagePermissions = null) {
+  if (role === 'admin') return true
+  const pageKey = CAPABILITY_PAGE[capability]
+  if (pageKey && pagePermissions && Object.hasOwn(pagePermissions, pageKey)) return Boolean(pagePermissions[pageKey])
   const caps = ROLE_CAPS[role] || []
   return caps.includes('*') || caps.includes(capability)
 }

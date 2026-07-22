@@ -9,9 +9,11 @@ from __future__ import annotations
 
 ROLE_CAPS: dict[str, list[str]] = {
     "admin": ["*"],
-    "manager": ["admin", "admin.reporting", "admin.resources", "platform.create", "platform.edit"],
-    "contributor": ["platform.create", "platform.edit"],
-    "viewer": [],
+    "manager": ["admin", "admin.reporting", "admin.resources", "page.platforms", "page.workspace",
+                "page.ask_ai", "page.guide", "platform.create", "platform.edit"],
+    "contributor": ["page.platforms", "page.workspace", "page.ask_ai", "page.guide",
+                    "platform.create", "platform.edit"],
+    "viewer": ["page.platforms", "page.workspace", "page.ask_ai", "page.guide"],
 }
 
 

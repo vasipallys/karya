@@ -171,6 +171,13 @@ export const api = {
   createStaff: (payload) => json('/resources/staff', 'POST', payload),
   updateStaff: (staffId, payload) => json(`/resources/staff/${staffId}`, 'PATCH', payload),
   deleteStaff: (staffId) => jsonRequest(`/resources/staff/${staffId}`, { method: 'DELETE' }),
+  resourceImportTemplate: () => downloadRequest('/resources/import/template'),
+  importResourcesExcel: async (file, updateExisting = false) => {
+    const form = new FormData()
+    form.append('file', file)
+    return jsonRequest(`/resources/import/excel?update_existing=${updateExisting}`, { method: 'POST', body: form })
+  },
+  importResourcesLdap: (payload) => json('/resources/import/ldap', 'POST', payload),
   resourceLookups: () => jsonRequest('/resources/lookups'),
   createLookup: (category, payload) => json(`/resources/lookups/${category}`, 'POST', payload),
   updateLookup: (lookupId, payload) => json(`/resources/lookups/${lookupId}`, 'PATCH', payload),
@@ -182,9 +189,12 @@ export const api = {
 
   // Admin — access management (local demo auth) + reporting.
   roles: () => jsonRequest('/access/roles'),
+  accessPages: () => jsonRequest('/access/pages'),
   accessUsers: () => jsonRequest('/access/users'),
+  myAccess: () => jsonRequest('/access/me'),
   loginUsers: () => jsonRequest('/access/login-users'),
   setAccess: (staffId, payload) => json(`/access/users/${staffId}`, 'PATCH', payload),
+  setPagePermissions: (staffId, permissions) => json(`/access/users/${staffId}/page-permissions`, 'PATCH', { permissions }),
   reportingOverview: () => jsonRequest('/reporting/overview'),
 
   // Agentic AI (Phase 3)

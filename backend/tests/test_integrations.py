@@ -59,6 +59,17 @@ def test_secrets_are_write_only_and_masked():
     assert store._stored_values("jira")["base_url"] == "https://acme2.atlassian.net"
 
 
+def test_runtime_config_is_backend_only_and_requires_enabled_connector():
+    values = {"server_url": "ldaps://directory.example.com", "bind_dn": "cn=reader",
+              "bind_password": "SECRET", "base_dn": "dc=example,dc=com"}
+    store.save_config("ldap", values, enabled=False)
+    with pytest.raises(store.IntegrationValidationError):
+        store.runtime_config("ldap")
+    store.save_config("ldap", values, enabled=True)
+    assert store.runtime_config("ldap")["bind_password"] == "SECRET"
+    assert "SECRET" not in str(store.get_config("ldap"))
+
+
 def test_catalog_status_reflects_configuration():
     before = {t["key"]: t for g in catalog.list_catalog()["groups"] for t in g["tools"]}
     assert before["github"]["status"] == "available"

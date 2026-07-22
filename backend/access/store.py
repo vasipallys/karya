@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.access.models import DEFAULT_ROLE, AccessUpdate
+from backend.access.pages import CAPABILITY_TO_PAGE, PAGE_KEYS, definitions
 from backend.storage.db import connect, utc_now
 
 # Subset of staff columns surfaced to the access UI / login screen.
@@ -13,6 +14,30 @@ _STAFF_FIELDS = "s.id, s.staff_code, s.staff_name, s.staff_type, s.staff_status,
 
 class NotFoundError(LookupError):
     pass
+
+
+class ValidationError(ValueError):
+    pass
+
+
+def _permission_overrides(conn: Any, staff_id: str) -> dict[str, bool]:
+    rows = conn.execute(
+        "SELECT page_key, allowed FROM app_page_permissions WHERE staff_id = ?", (staff_id,)
+    ).fetchall()
+    return {row["page_key"]: bool(row["allowed"]) for row in rows}
+
+
+def _permission_bundle(conn: Any, staff_id: str, role: str) -> tuple[dict[str, bool], dict[str, bool]]:
+    from backend.auth.permissions import can
+
+    overrides = _permission_overrides(conn, staff_id)
+    effective = {}
+    for page in definitions():
+        # Administrators are the break-glass identity and cannot be locked out.
+        effective[page["key"]] = True if role == "admin" else overrides.get(
+            page["key"], can(role, page["capability"])
+        )
+    return effective, overrides
 
 
 def _bootstrap_admin(conn: Any) -> None:
@@ -38,6 +63,7 @@ def _bootstrap_admin(conn: Any) -> None:
            ON CONFLICT(staff_id) DO UPDATE SET role = 'admin', enabled = 1, updated_at = excluded.updated_at""",
         (first["id"], utc_now()),
     )
+    conn.execute("DELETE FROM app_page_permissions WHERE staff_id = ?", (first["id"],))
 
 
 def list_users(enabled_only: bool = False) -> list[dict[str, Any]]:
@@ -54,9 +80,12 @@ def list_users(enabled_only: bool = False) -> list[dict[str, Any]]:
                 ORDER BY s.staff_name COLLATE NOCASE""",
             (DEFAULT_ROLE,),
         ).fetchall()
-    users = [dict(row) for row in rows]
-    for user in users:
-        user["enabled"] = bool(user["enabled"])
+        users = [dict(row) for row in rows]
+        for user in users:
+            user["enabled"] = bool(user["enabled"])
+            effective, overrides = _permission_bundle(conn, user["id"], user["role"])
+            user["page_permissions"] = effective
+            user["page_permission_overrides"] = overrides
     if enabled_only:
         users = [user for user in users if user["enabled"] and user["staff_status"] == "Active"]
     return users
@@ -76,6 +105,8 @@ def set_access(staff_id: str, payload: AccessUpdate) -> dict[str, Any]:
                ON CONFLICT(staff_id) DO UPDATE SET role = excluded.role, enabled = excluded.enabled, updated_at = excluded.updated_at""",
             (staff_id, role, 1 if enabled else 0, utc_now()),
         )
+        if role == "admin":
+            conn.execute("DELETE FROM app_page_permissions WHERE staff_id = ?", (staff_id,))
     return get_user(staff_id)
 
 
@@ -95,6 +126,49 @@ def effective_role(staff_id: str) -> str | None:
         if row is None:
             return DEFAULT_ROLE
         return None if not row["enabled"] else row["role"]
+
+
+def page_permission_override(staff_id: str, capability: str) -> bool | None:
+    """Return a user's explicit page decision for a capability, if present."""
+    page_key = CAPABILITY_TO_PAGE.get(capability)
+    if page_key is None:
+        return None
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT allowed FROM app_page_permissions WHERE staff_id = ? AND page_key = ?",
+            (staff_id, page_key),
+        ).fetchone()
+    return None if row is None else bool(row["allowed"])
+
+
+def set_page_permissions(staff_id: str, permissions: dict[str, bool | None]) -> dict[str, Any]:
+    unknown = sorted(set(permissions) - PAGE_KEYS)
+    if unknown:
+        raise ValidationError(f"Unknown page permission(s): {', '.join(unknown)}")
+    with connect() as conn:
+        _bootstrap_admin(conn)
+        staff = conn.execute("SELECT id FROM resource_staff WHERE id = ?", (staff_id,)).fetchone()
+        if staff is None:
+            raise NotFoundError(f"Staff '{staff_id}' was not found")
+        access = conn.execute("SELECT role FROM app_access WHERE staff_id = ?", (staff_id,)).fetchone()
+        role = access["role"] if access else DEFAULT_ROLE
+        if role == "admin" and permissions:
+            raise ValidationError("Administrator page access is always enabled to prevent lockout")
+        for page_key, allowed in permissions.items():
+            if allowed is None:
+                conn.execute(
+                    "DELETE FROM app_page_permissions WHERE staff_id = ? AND page_key = ?",
+                    (staff_id, page_key),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO app_page_permissions (staff_id, page_key, allowed, updated_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(staff_id, page_key) DO UPDATE SET
+                         allowed = excluded.allowed, updated_at = excluded.updated_at""",
+                    (staff_id, page_key, 1 if allowed else 0, utc_now()),
+                )
+    return get_user(staff_id)
 
 
 def role_counts() -> dict[str, int]:

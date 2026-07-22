@@ -91,3 +91,38 @@ def test_bootstrap_admin_role_header_fallback(client):
     assert client.get("/reporting/overview", headers={"X-User-Role": "admin"}).status_code == 200
     # A spoofed role that isn't recognised is rejected.
     assert client.get("/reporting/overview", headers={"X-User-Role": "superuser"}).status_code == 401
+
+
+def test_page_permission_overrides_are_enforced_by_api(client):
+    admin = hdr(client.ids["admin"])
+    viewer = hdr(client.ids["viewer"])
+    target = client.ids["viewer"]
+
+    pages = client.get("/access/pages", headers=admin)
+    assert pages.status_code == 200
+    assert {page["key"] for page in pages.json()} >= {"platforms", "workspace", "admin_reporting"}
+
+    denied = client.patch(
+        f"/access/users/{target}/page-permissions",
+        json={"permissions": {"platforms": False}}, headers=admin,
+    )
+    assert denied.status_code == 200
+    assert denied.json()["page_permissions"]["platforms"] is False
+    assert client.get("/projects", headers=viewer).status_code == 403
+
+    granted = client.patch(
+        f"/access/users/{target}/page-permissions",
+        json={"permissions": {"admin_reporting": True}}, headers=admin,
+    )
+    assert granted.status_code == 200
+    assert client.get("/reporting/overview", headers=viewer).status_code == 200
+    assert client.get("/access/me", headers=viewer).status_code == 200
+
+
+def test_only_access_admins_can_change_page_permissions(client):
+    response = client.patch(
+        f"/access/users/{client.ids['viewer']}/page-permissions",
+        json={"permissions": {"admin_reporting": True}},
+        headers=hdr(client.ids["manager"]),
+    )
+    assert response.status_code == 403

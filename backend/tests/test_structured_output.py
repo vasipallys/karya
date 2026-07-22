@@ -1,5 +1,6 @@
 from langchain_core.messages import AIMessage
 
+from backend.ai.schemas import ChatCommand
 from backend.graph.nodes import _parse_structured_result, _schema_contract
 from backend.graph.state import DriversOutput
 
@@ -30,3 +31,17 @@ def test_contract_is_plain_text_that_cannot_be_echoed_as_json_schema():
     assert "minimum 2 items/characters" in contract
     assert '"properties"' not in contract
     assert not contract.lstrip().startswith("{")
+
+
+def test_chat_command_tolerates_boolean_status_from_provider():
+    result = {
+        "raw": AIMessage(content='{"action":"list","level":"L1","status":true}'),
+        "parsed": None,
+        "parsing_error": ValueError("status must be a string"),
+    }
+
+    parsed = _parse_structured_result(ChatCommand, result)
+
+    assert parsed.action == "list"
+    assert parsed.level == "L1"
+    assert parsed.status == ""

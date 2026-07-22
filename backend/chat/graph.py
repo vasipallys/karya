@@ -22,6 +22,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from backend.ai import agents
+from backend.ai.nl import classify_read, is_write_intent
 from backend.ai.schemas import ChatCommand
 from backend.c4 import service as c4_service
 from backend.c4 import store as c4_store
@@ -51,6 +52,29 @@ async def planner(state: ChatAgentState) -> dict[str, Any]:
 
 def retrieval(state: ChatAgentState) -> dict[str, Any]:
     elements = c4_store.list_graph(state["project_id"])["elements"]
+    read = (classify_read(state["message"], [str(element["name"]) for element in elements])
+            if not is_write_intent(state["message"]) else None)
+    action, _, read_name = read or ("", "", "")
+    if action == "describe" and read_name:
+        target = next((element for element in elements if element["name"] == read_name), None)
+        if target:
+            parent = next((element for element in elements if element["id"] == target.get("parent_id")), None)
+            children = [element for element in elements if element.get("parent_id") == target["id"]]
+            summary = f"{target['level']} {target['name']} · {target['status']}"
+            if parent:
+                summary += f" · parent: {parent['name']}"
+            summary += f" · {len(children)} child item(s)"
+            return {"facts": {
+                "element_count": 1,
+                "by_level": {target["level"]: 1},
+                "proposed": int(target["status"] == "proposed"),
+                "names": [target["name"]],
+                "summary": summary,
+                "element": {key: target.get(key) for key in
+                            ("id", "name", "level", "kind", "description", "tech", "code_path", "status")},
+                "parent": parent["name"] if parent else None,
+                "children": [child["name"] for child in children],
+            }}
     by_level: dict[str, int] = {}
     for element in elements:
         by_level[element["level"]] = by_level.get(element["level"], 0) + 1
@@ -75,6 +99,37 @@ def tools(state: ChatAgentState) -> dict[str, Any]:
     low = state["message"].lower()
     calls: list[dict[str, Any]] = []
 
+    elements = c4_store.list_graph(project_id)["elements"]
+    read = (classify_read(state["message"], [str(element["name"]) for element in elements])
+            if not is_write_intent(state["message"]) else None)
+    action, level, read_name = read or ("", "", "")
+    if action == "describe" and read_name:
+        described = next((element for element in elements if element["name"] == read_name), None)
+        if described:
+            child_count = sum(1 for element in elements if element.get("parent_id") == described["id"])
+            calls.append({
+                "tool": "element_context",
+                "summary": (f"Loaded {described['level']} {described['name']} from the model with "
+                            f"description, architecture workspace, relations, and {child_count} child item(s)"),
+            })
+        return {"tool_runs": {"calls": calls, "summary": f"{len(calls)} scoped element context result(s)"}}
+    if action == "readiness":
+        if read_name:
+            named = next((element for element in elements if element["name"] == read_name), None)
+            if named and named["level"] in _READINESS:
+                result = _READINESS[named["level"]](project_id, named["id"])
+                calls.append({"tool": "readiness",
+                              "summary": f"{named['name']} at {result['score']}% - {result['status_label']}"})
+        elif level in _READINESS:
+            rows = []
+            for element in elements:
+                if element["level"] == level:
+                    result = _READINESS[level](project_id, element["id"])
+                    rows.append(f"{element['name']} {result['score']}%")
+            calls.append({"tool": f"{level.lower()}_readiness",
+                          "summary": " | ".join(rows) or f"No {level} items"})
+        return {"tool_runs": {"calls": calls, "summary": f"{len(calls)} scoped readiness result(s)"}}
+
     totals = c4_service.rollup(project_id)["totals"]
     stories = totals["estimated_stories"] + totals["unestimated_stories"]
     calls.append({"tool": "rollup",
@@ -84,7 +139,6 @@ def tools(state: ChatAgentState) -> dict[str, Any]:
     calls.append({"tool": "workflow_guide",
                   "summary": f"{guide['overall_pct']}% through the workflow · next: {guide['next_action']['text']}"})
 
-    elements = c4_store.list_graph(project_id)["elements"]
     named = next((e for e in sorted(elements, key=lambda e: -len(e["name"])) if e["name"].lower() in low), None)
     if named and named["level"] in _READINESS:
         result = _READINESS[named["level"]](project_id, named["id"])

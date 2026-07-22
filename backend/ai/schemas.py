@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---- Auto-staffing agent ------------------------------------------------
@@ -254,7 +254,7 @@ class ChatCommand(BaseModel):
     """One interpreted chat intent. Reads execute immediately; the *_element writes
     are surfaced to the user as a proposal to apply."""
     action: Literal[
-        "overview", "list", "readiness", "report",
+        "overview", "list", "describe", "readiness", "report",
         "create_element", "update_element", "delete_element", "create_relation",
         "answer", "code", "web_search", "image", "document", "help", "none",
     ] = "help"
@@ -262,8 +262,24 @@ class ChatCommand(BaseModel):
     name: str = Field(default="", max_length=200)      # target element name
     parent: str = Field(default="", max_length=200)    # parent element name (create)
     new_name: str = Field(default="", max_length=200)  # rename target
-    status: str = Field(default="", max_length=40)     # update status
+    status: str = Field(
+        default="",
+        max_length=40,
+        description="Named element status for a list filter or update; use an empty string when no status was requested.",
+    )
     description: str = Field(default="", max_length=2000)
     target: str = Field(default="", max_length=200)    # relation target name (create_relation, or create_element + route)
     label: str = Field(default="", max_length=120)     # relation label, e.g. "routes"
     reply: str = Field(default="", max_length=12000)   # markdown answer / generated code
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_boolean_status(cls, value):
+        """Treat a provider's boolean 'has status' flag as an omitted filter.
+
+        Guessing that true means a concrete lifecycle status could silently
+        filter reads or propose the wrong mutation, so the safe value is empty.
+        """
+        if value is None or isinstance(value, bool):
+            return ""
+        return value

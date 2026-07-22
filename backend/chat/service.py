@@ -1,6 +1,6 @@
 """Dispatch an interpreted chat command.
 
-Reads (overview / list / readiness / report) run immediately against the
+Reads (overview / list / describe / readiness / report) run immediately against the
 deterministic services. Writes (create / update / delete element) are returned as
 a *proposal* — the caller confirms, and `apply` re-resolves the names and performs
 the change through the C4 store (so the same RBAC and level rules apply).
@@ -21,9 +21,19 @@ from backend.l1arch import service as l1_service
 from backend.l2arch import service as l2_service
 from backend.l3arch import service as l3_service
 from backend.l4arch import service as l4_service
+from backend.l1arch import store as l1_store
+from backend.l2arch import store as l2_store
+from backend.l3arch import store as l3_store
+from backend.l4arch import store as l4_store
 from backend.workflow import service as workflow_service
 
 _READINESS = {"L1": l1_service.readiness, "L2": l2_service.readiness, "L3": l3_service.readiness, "L4": l4_service.readiness}
+_CONTEXT_LOADERS = {
+    "L1": l1_store.get_baseline,
+    "L2": l2_store.get_workspace,
+    "L3": l3_store.get_workspace,
+    "L4": l4_store.get_workspace,
+}
 _LEVELS = ("L1", "L2", "L3", "L4")
 
 
@@ -89,6 +99,8 @@ def dispatch(project_id: str, command: ChatCommand) -> dict[str, Any]:
         return _overview(project_id, command)
     if action == "list":
         return _list(project_id, command)
+    if action == "describe":
+        return _describe(project_id, command)
     if action == "readiness":
         return _readiness(project_id, command)
     if action == "report":
@@ -180,6 +192,95 @@ def _list(project_id: str, command: ChatCommand) -> dict[str, Any]:
     return {"reply": reply, "action": "list", "data": {"level": level, "status": wanted, "items": rows}, "mutation": None}
 
 
+def _describe(project_id: str, command: ChatCommand) -> dict[str, Any]:
+    """Describe one element from persisted C4 and level-workspace context."""
+    element = _find(project_id, command.name)
+    graph = c4_store.list_graph(project_id)
+    by_id = {item["id"]: item for item in graph["elements"]}
+    parent = by_id.get(element.get("parent_id"))
+    children = [
+        {"id": item["id"], "name": item["name"], "level": item["level"], "status": item["status"]}
+        for item in graph["elements"] if item.get("parent_id") == element["id"]
+    ]
+
+    relations = []
+    for relation in graph["relations"]:
+        if element["id"] not in {relation["source_id"], relation["target_id"]}:
+            continue
+        source = by_id.get(relation["source_id"], {})
+        target = by_id.get(relation["target_id"], {})
+        relations.append({
+            "source": source.get("name", relation["source_id"]),
+            "target": target.get("name", relation["target_id"]),
+            "label": relation.get("label") or "uses",
+            "kind": relation.get("kind") or "sync",
+        })
+
+    workspace = _CONTEXT_LOADERS[element["level"]](project_id, element["id"])
+    readiness = workspace.get("readiness") or _READINESS[element["level"]](project_id, element["id"])
+    arch = workspace.get("arch") or {}
+    vision = workspace.get("vision") or {}
+    architecture_summary = str(arch.get("summary") or "").strip()
+    vision_statement = str(vision.get("vision_statement") or "").strip()
+    description = str(element.get("description") or "").strip()
+
+    collection_keys = {
+        "L1": ("okrs", "stakeholders", "capabilities", "risks"),
+        "L2": ("containers", "apis", "nfrs", "integrations"),
+        "L3": ("components", "interfaces", "dependencies", "concerns"),
+        "L4": ("code_units", "test_cases", "checklist"),
+    }[element["level"]]
+    artifact_counts = {key: len(workspace.get(key) or []) for key in collection_keys}
+
+    level_label = {"L1": "initiative", "L2": "container", "L3": "component", "L4": "task"}[element["level"]]
+    location = f" under **{parent['name']}**" if parent else ""
+    lines = [
+        f"**{element['name']}** is an **{element['level']} {level_label}**{location}. "
+        f"Its model status is **{element['status']}**.",
+    ]
+    if description:
+        lines.append(description)
+    elif architecture_summary:
+        lines.append(architecture_summary)
+    elif vision_statement:
+        lines.append(vision_statement)
+    else:
+        lines.append("No narrative description has been recorded for this element yet.")
+    if architecture_summary and architecture_summary != description:
+        lines.append(f"**Architecture summary:** {architecture_summary}")
+    if vision_statement and vision_statement != description:
+        lines.append(f"**Vision:** {vision_statement}")
+    if element.get("tech"):
+        lines.append(f"**Technology:** {element['tech']}")
+    if element.get("code_path"):
+        lines.append(f"**Code path:** `{element['code_path']}`")
+    if children:
+        child_names = ", ".join(f"{child['name']} ({child['status']})" for child in children[:12])
+        lines.append(f"**Children:** {child_names}")
+    populated = [f"{count} {key.replace('_', ' ')}" for key, count in artifact_counts.items() if count]
+    if populated:
+        lines.append("**Architecture records:** " + ", ".join(populated))
+    if relations:
+        relation_text = "; ".join(
+            f"{item['source']} -[{item['label']}]-> {item['target']}" for item in relations[:12]
+        )
+        lines.append(f"**Connections:** {relation_text}")
+    lines.append(f"**Readiness:** {readiness['score']}% - {readiness['status_label']}")
+
+    data = {
+        "element": {key: element.get(key) for key in
+                    ("id", "name", "level", "kind", "description", "tech", "code_path", "status")},
+        "parent": ({"id": parent["id"], "name": parent["name"], "level": parent["level"]} if parent else None),
+        "children": children,
+        "relations": relations,
+        "architecture_summary": architecture_summary,
+        "vision_statement": vision_statement,
+        "artifact_counts": artifact_counts,
+        "readiness": {"score": readiness["score"], "status_label": readiness["status_label"]},
+    }
+    return {"reply": "\n\n".join(lines), "action": "describe", "data": data, "mutation": None}
+
+
 def _readiness(project_id: str, command: ChatCommand) -> dict[str, Any]:
     if command.name.strip():
         element = _find(project_id, command.name)
@@ -190,14 +291,28 @@ def _readiness(project_id: str, command: ChatCommand) -> dict[str, Any]:
         reply = f"**{element['name']}** ({element['level']}) is at **{result['score']}%** — {result['status_label']}."
         data = {"id": element["id"], "name": element["name"], "level": element["level"], **result}
         return {"reply": reply, "action": "readiness", "data": data, "mutation": None}
-    # level-wide summary from the workflow guide
-    guide = workflow_service.guide(project_id)
+    # Level-wide requests return each element's own deterministic score. The
+    # aggregate alone cannot answer "status of each L1 item".
     level = _norm_level(command.level)
-    view = next((v for v in guide["levels"] if v["level"] == level), None)
-    if not view:
+    if not level:
         raise ChatError("Tell me an element name or a level (L1–L4) to check readiness for.")
-    reply = f"{level} average readiness is **{view['avg_readiness']}%** ({view['ready']}/{view['count']} ready)."
-    return {"reply": reply, "action": "readiness", "data": view, "mutation": None}
+    scorer = _READINESS[level]
+    elements = [element for element in _elements(project_id) if element["level"] == level]
+    rows = []
+    for element in elements:
+        result = scorer(project_id, element["id"])
+        rows.append({
+            "id": element["id"], "name": element["name"], "level": level,
+            "status": element["status"], "score": int(result["score"]),
+            "status_label": result["status_label"],
+        })
+    rows.sort(key=lambda item: item["name"].lower())
+    average = round(sum(item["score"] for item in rows) / len(rows)) if rows else 0
+    ready = sum(1 for item in rows if item["score"] >= workflow_service.READY_THRESHOLD)
+    reply = (f"{level} readiness by item averages **{average}%** ({ready}/{len(rows)} ready)."
+             if rows else f"No {level} elements were found.")
+    data = {"level": level, "count": len(rows), "ready": ready, "avg_readiness": average, "items": rows}
+    return {"reply": reply, "action": "readiness", "data": data, "mutation": None}
 
 
 def _report(project_id: str, command: ChatCommand) -> dict[str, Any]:

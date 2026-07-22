@@ -1,6 +1,7 @@
 import { Blocks, CalendarRange, CircleAlert, FileText, Landmark, PanelTopClose, PanelTopOpen, RefreshCw, ShieldCheck, UsersRound, WalletCards } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import LevelBreadcrumb from '../components/LevelBreadcrumb'
 import TeamPlanning from './TeamPlanning'
 import WorkCostPlanning from './WorkCostPlanning'
@@ -19,6 +20,7 @@ const SECTIONS = [
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'AUD', 'CAD', 'JPY', 'SGD']
 
 export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpenCanvas, onOpenElement, reloadToken }) {
+  const { can } = useAuth()
   const [graph, setGraph] = useState({ elements: [], relations: [] })
   const [l1Id, setL1Id] = useState(requestedL1Id || '')
   const [plan, setPlan] = useState(null)
@@ -95,7 +97,7 @@ export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpe
       <div className="l1-section-surface">
         {section === 'baseline' && <Suspense fallback={<div className="l1-loading">Loading L1 baseline…</div>}><L1Architecture projectId={projectId} l1Id={l1Id} setError={setError} /></Suspense>}
         {section === 'requirements' && <Suspense fallback={<div className="l1-loading">Loading requirements workspace…</div>}><RequirementsPlanning projectId={projectId} l1Id={l1Id} setError={setError} /></Suspense>}
-        {section === 'teams' && <TeamPlanning projectId={projectId} l1Id={l1Id} plan={plan} refresh={refresh} setError={setError} money={money} />}
+        {section === 'teams' && <TeamPlanning projectId={projectId} l1Id={l1Id} plan={plan} refresh={refresh} setError={setError} money={money} canCreateResource={can('admin.resources')} />}
         {section === 'work' && <WorkCostPlanning projectId={projectId} l1Id={l1Id} plan={plan} graph={graph} refresh={refresh} setError={setError} money={money} />}
         {section === 'architecture' && <Suspense fallback={<div className="l1-loading">Loading diagram studio…</div>}><ArchitecturePlanning projectId={projectId} l1Id={l1Id} plan={plan} refresh={refresh} setError={setError} /></Suspense>}
       </div>

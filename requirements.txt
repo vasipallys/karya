@@ -15,6 +15,7 @@ httpx==0.28.1
 pandas==2.2.3
 openpyxl==3.1.5
 xlrd==2.0.1
+ldap3==2.9.1
 tenacity==9.1.2
 langgraph-checkpoint-sqlite==3.0.1
 aiosqlite==0.21.0

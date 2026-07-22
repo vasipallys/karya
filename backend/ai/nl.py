@@ -26,11 +26,25 @@ _STATUS_WORDS = {"pending": "proposed", "proposed": "proposed", "draft": "propos
                  "active": "active", "reviewed": "reviewed", "baselined": "baselined"}
 _REPORT = re.compile(r"\bnext\b|what should i|recommend|roll.?up|\breport\b|estimat", re.IGNORECASE)
 _READINESS = re.compile(r"readiness|how ready|are we ready|is it ready", re.IGNORECASE)
+_DESCRIBE = re.compile(
+    r"\b(describe|description|purpose|responsibilit(?:y|ies)|details?)\b|"
+    r"\b(?:what is|what's|tell me)\b.*\babout\b|\bwhat does\b.*\bdo\b",
+    re.IGNORECASE,
+)
 _OVERVIEW = re.compile(r"overview|project status|\bstatus\b|progress|where am i|how are we|health|state of|summar(?:y|ise|ize)", re.IGNORECASE)
+_WRITE_INTENT = re.compile(
+    r"\b(create|add|rename|delete|remove|set|update|change|connect|route|link|wire)\b",
+    re.IGNORECASE,
+)
 
 
 def _squash(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def is_write_intent(text: str) -> bool:
+    """Whether a message should reach mutation routing before read routing."""
+    return bool(_WRITE_INTENT.search(text))
 
 
 def resolve_element_name(fragment: str, names: list[str]) -> str:
@@ -176,7 +190,7 @@ def classify_read(text: str, names: list[str], screen_level: str = "", screen_el
     """Route a *read* request to a deterministic, DB-grounded action.
 
     Returns `(action, level, name)` for one of overview / report / list /
-    readiness, or None when the message isn't a recognizable read (so the caller
+    describe / readiness, or None when the message isn't a recognizable read (so the caller
     can try writes or fall back to a free-form answer). Keeping this shared means
     "give me complete project status" → overview and "summary of all L2" → list
     are answered from real data on every path instead of the model hallucinating.
@@ -189,11 +203,25 @@ def classify_read(text: str, names: list[str], screen_level: str = "", screen_el
     low = text.lower()
     level_match = _LEVEL_RE.search(low)
     level = f"L{level_match.group(1)}" if level_match else ""
-    found = next((n for n in sorted(names, key=len, reverse=True) if n.lower() in low), "")
+    found = resolve_element_name(text, names)
 
     # "what's next / roll-up / report / estimation progress" → deterministic report.
     if _REPORT.search(low):
         return ("report", "", "")
+    # Description/details of a resolved element come from its persisted C4 and
+    # architecture records, never a free-form model answer.
+    if found and _DESCRIBE.search(low):
+        return ("describe", "", found)
+    # An explicitly named lifecycle status is a list filter (for example,
+    # "list L1 status active"), not a readiness request.
+    if level and re.search(r"\b(status|progress)\b", low) and any(
+        re.search(rf"\b{word}\b", low) for word in _STATUS_WORDS
+    ):
+        return ("list", level, "")
+    # A named element or explicit level scopes status/progress to readiness.
+    # This keeps "status of each L1 item" out of the project overview route.
+    if re.search(r"\b(status|progress)\b", low) and (found or level):
+        return ("readiness", "" if found else level, found)
     # Readiness of a named element (explicit, else the open element), or a whole level.
     if _READINESS.search(low):
         name = found or screen_element

@@ -19,6 +19,7 @@ for package in [
     "langgraph.checkpoint.sqlite",
     "docx",
     "pptx",
+    "ldap3",
 ]:
     hiddenimports.extend(collect_submodules(package))
 if os.getenv("KARYA_BUNDLE_LOCAL_LLM", "").lower() in {"1", "true", "yes"}:

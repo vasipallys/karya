@@ -25,6 +25,21 @@ LOOKUP_CATEGORIES: tuple[str, ...] = ("tech_unit", "rank", "hr_role")
 CustomFieldType = Literal["text", "number", "date", "select", "boolean"]
 
 
+class LdapImportRequest(BaseModel):
+    connector_key: Literal["ldap", "active_directory"] = "ldap"
+    scope: Literal["bulk", "single"] = "bulk"
+    identifier: str | None = Field(default=None, max_length=320)
+    search_filter: str = Field(default="(objectClass=person)", min_length=3, max_length=1000)
+    max_results: int = Field(default=500, ge=1, le=5000)
+    update_existing: bool = False
+
+    @model_validator(mode="after")
+    def _single_user_identifier(self) -> "LdapImportRequest":
+        if self.scope == "single" and not (self.identifier or "").strip():
+            raise ValueError("identifier is required for a single-user LDAP import")
+        return self
+
+
 class StaffBase(BaseModel):
     staff_first_name: str = Field(min_length=1, max_length=120)
     staff_last_name: str = Field(min_length=1, max_length=120)

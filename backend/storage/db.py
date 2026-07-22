@@ -249,6 +249,13 @@ CREATE TABLE IF NOT EXISTS app_access (
   enabled INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS app_page_permissions (
+  staff_id TEXT NOT NULL REFERENCES resource_staff(id) ON DELETE CASCADE,
+  page_key TEXT NOT NULL,
+  allowed INTEGER NOT NULL CHECK (allowed IN (0,1)),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (staff_id, page_key)
+);
 CREATE INDEX IF NOT EXISTS idx_resource_staff_manager ON resource_staff(reporting_manager_id);
 CREATE INDEX IF NOT EXISTS idx_resource_lookups_category ON resource_lookups(category);
 CREATE INDEX IF NOT EXISTS idx_elements_project ON c4_elements(project_id);

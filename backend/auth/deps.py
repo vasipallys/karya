@@ -12,7 +12,7 @@ import re
 from starlette.requests import Request
 
 from backend.access.models import ROLES
-from backend.access.store import effective_role
+from backend.access.store import effective_role, page_permission_override
 from backend.storage.db import connect
 
 # Endpoints reachable before/without sign-in.
@@ -43,10 +43,25 @@ def resolve_role(request: Request) -> str | None:
     return header_role if header_role in ROLES else None
 
 
-def route_policy(method: str, path: str) -> tuple[bool, str | None]:
+def capability_allowed(request: Request, role: str, capability: str) -> bool:
+    """Role default with an authoritative per-user page override."""
+    if role == "admin":
+        return True
+    staff_id = request.headers.get("X-User-Id")
+    if staff_id:
+        override = page_permission_override(staff_id, capability)
+        if override is not None:
+            return override
+    from backend.auth.permissions import can
+    return can(role, capability)
+
+
+def route_policy(method: str, path: str) -> tuple[bool, str | tuple[str, ...] | None]:
     """Return (requires_auth, required_capability) for a method+path."""
     if path in PUBLIC_PATHS:
         return False, None
+    if path == "/access/me":
+        return True, None
     if path.startswith("/access"):
         return True, "admin.access"
     if path.startswith("/reporting"):
@@ -59,10 +74,20 @@ def route_policy(method: str, path: str) -> tuple[bool, str | None]:
         # Reading the directory powers planning dropdowns (contributors need it);
         # only editing it requires the resources capability.
         return (True, None) if method == "GET" else (True, "admin.resources")
+    if path.startswith("/ai/"):
+        return True, "page.ask_ai"
+    if path == "/projects":
+        if method == "GET":
+            return True, "page.platforms"
+        return True, ("page.platforms", "platform.create")
+    if path.startswith("/projects/"):
+        if "/chat" in path and not path.endswith("/chat/apply") and method in ("GET", "POST", "DELETE"):
+            return True, "page.workspace"
+        if method in ("POST", "PATCH", "PUT", "DELETE"):
+            return True, ("page.workspace", "platform.edit")
+        return True, "page.workspace"
     # The chat query/propose endpoints read and propose but never persist, so any
     # signed-in user may use them; only /chat/apply (which writes) needs platform.edit.
-    if "/chat" in path and not path.endswith("/chat/apply") and method in ("GET", "POST", "DELETE"):
-        return True, None
     if method in ("POST", "PATCH", "PUT", "DELETE"):
         return True, "platform.edit"
     return True, None  # authenticated reads

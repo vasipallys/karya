@@ -1,4 +1,4 @@
-import { Pencil, Plus, Settings2, Trash2, Users, X } from 'lucide-react'
+import { Download, Network, Pencil, Plus, Settings2, Trash2, Upload, Users, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 
@@ -52,6 +52,9 @@ export default function ResourceDirectory() {
   const [filters, setFilters] = useState({ staff_status: '', sub_status: '', staff_type: '', search: '' })
   const [dialog, setDialog] = useState(null)      // { editing, draft }
   const [settings, setSettings] = useState(false)
+  const [excelDialog, setExcelDialog] = useState(null)
+  const [ldapDialog, setLdapDialog] = useState(null)
+  const [importResult, setImportResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -99,6 +102,34 @@ export default function ResourceDirectory() {
     try { await api.deleteStaff(record.id); await loadStaff() } catch (err) { setError(err) }
   }
 
+  const downloadTemplate = async () => {
+    setBusy(true); setError(null)
+    try {
+      const { blob, filename } = await api.resourceImportTemplate()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url; link.download = filename; link.click()
+      URL.revokeObjectURL(url)
+    } catch (err) { setError(err) } finally { setBusy(false) }
+  }
+
+  const importExcel = async () => {
+    if (!excelDialog?.file) return
+    setBusy(true); setError(null); setImportResult(null)
+    try {
+      const result = await api.importResourcesExcel(excelDialog.file, excelDialog.update_existing)
+      setImportResult(result); setExcelDialog(null); await loadStaff()
+    } catch (err) { setError(err) } finally { setBusy(false) }
+  }
+
+  const importLdap = async () => {
+    setBusy(true); setError(null); setImportResult(null)
+    try {
+      const result = await api.importResourcesLdap(ldapDialog)
+      setImportResult(result); setLdapDialog(null); await loadStaff()
+    } catch (err) { setError(err) } finally { setBusy(false) }
+  }
+
   const managerOptions = (staff || []).filter((row) => !dialog?.editing || row.id !== dialog.editing.id)
 
   return <div className="res-screen">
@@ -108,12 +139,21 @@ export default function ResourceDirectory() {
         <p>A global directory of people that any module — squads, work items, reporting chains — can draw from. Add custom fields to capture whatever your teams track.</p>
       </div>
       <div className="l1-heading-actions">
+        <button className="m3-btn outlined" disabled={busy} onClick={downloadTemplate}><Download size={16} /> Excel template</button>
+        <button className="m3-btn outlined" onClick={() => setExcelDialog({ file: null, update_existing: false })}><Upload size={16} /> Import Excel</button>
+        <button className="m3-btn outlined" onClick={() => setLdapDialog({ connector_key: 'ldap', scope: 'bulk', identifier: '', search_filter: '(objectClass=person)', max_results: 500, update_existing: false })}><Network size={16} /> Import directory</button>
         <button className="m3-btn outlined" onClick={() => setSettings(true)}><Settings2 size={16} /> Lists &amp; fields</button>
         <button className="m3-btn filled" onClick={() => openEditor()}><Plus size={16} /> Add resource</button>
       </div>
     </header>
 
     {error && <div className="m3-banner error">{String(error.message || error)}</div>}
+    {importResult && <div className="m3-banner info" role="status">
+      <div><strong>Resource import complete.</strong> {importResult.counts.created} created, {importResult.counts.updated} updated, {importResult.counts.skipped} skipped, {importResult.counts.errors} failed.
+        {importResult.errors.length > 0 && <ul>{importResult.errors.slice(0, 8).map((item) => <li key={`${item.row}-${item.message}`}>Row {item.row}: {item.message}</li>)}</ul>}
+      </div>
+      <button className="m3-icon-btn" aria-label="Dismiss import result" onClick={() => setImportResult(null)}><X size={16} /></button>
+    </div>}
 
     <div className="res-filters">
       <input placeholder="Search name or code…" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
@@ -178,6 +218,24 @@ export default function ResourceDirectory() {
             onChange={(value) => setDraft({ custom_values: { ...dialog.draft.custom_values, [field.key]: value } })} />)}
         </div>
       </>}
+    </Dialog>}
+
+    {excelDialog && <Dialog title="Import resources from Excel" onClose={() => setExcelDialog(null)}
+      actions={<><button className="m3-btn text" onClick={() => setExcelDialog(null)}>Cancel</button><button className="m3-btn filled" disabled={busy || !excelDialog.file} onClick={importExcel}>Import resources</button></>}>
+      <p className="m3-supporting">Upload one row for a single resource or multiple rows for a bulk import. Supported formats: .xlsx, .xls and .csv.</p>
+      <label className="m3-field"><span>Resource file *</span><input aria-label="Resource file" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => setExcelDialog({ ...excelDialog, file: event.target.files?.[0] || null })} /></label>
+      <label className="res-required-toggle"><input type="checkbox" checked={excelDialog.update_existing} onChange={(event) => setExcelDialog({ ...excelDialog, update_existing: event.target.checked })} /> Update people whose display name already exists</label>
+    </Dialog>}
+
+    {ldapDialog && <Dialog title="Import resources from a directory" onClose={() => setLdapDialog(null)}
+      actions={<><button className="m3-btn text" onClick={() => setLdapDialog(null)}>Cancel</button><button className="m3-btn filled" disabled={busy || (ldapDialog.scope === 'single' && !ldapDialog.identifier.trim())} onClick={importLdap}>Import resources</button></>}>
+      <p className="m3-supporting">Uses the enabled connector and its protected credentials from Admin → Integrations.</p>
+      <label className="m3-field"><span>Directory connector</span><select value={ldapDialog.connector_key} onChange={(event) => setLdapDialog({ ...ldapDialog, connector_key: event.target.value })}><option value="ldap">LDAP</option><option value="active_directory">Active Directory</option></select></label>
+      <label className="m3-field"><span>Import scope</span><select value={ldapDialog.scope} onChange={(event) => setLdapDialog({ ...ldapDialog, scope: event.target.value })}><option value="bulk">Bulk users</option><option value="single">Single user</option></select></label>
+      {ldapDialog.scope === 'single' && <label className="m3-field"><span>Username, email or employee number *</span><input autoFocus value={ldapDialog.identifier} onChange={(event) => setLdapDialog({ ...ldapDialog, identifier: event.target.value })} /></label>}
+      <label className="m3-field"><span>Base LDAP search filter</span><input value={ldapDialog.search_filter} onChange={(event) => setLdapDialog({ ...ldapDialog, search_filter: event.target.value })} /></label>
+      {ldapDialog.scope === 'bulk' && <label className="m3-field"><span>Maximum results</span><input type="number" min="1" max="5000" value={ldapDialog.max_results} onChange={(event) => setLdapDialog({ ...ldapDialog, max_results: Number(event.target.value) })} /></label>}
+      <label className="res-required-toggle"><input type="checkbox" checked={ldapDialog.update_existing} onChange={(event) => setLdapDialog({ ...ldapDialog, update_existing: event.target.checked })} /> Update people whose display name already exists</label>
     </Dialog>}
 
     {settings && <SettingsDialog lookups={lookups} customFields={customFields} onClose={() => setSettings(false)}

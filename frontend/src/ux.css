@@ -101,6 +101,47 @@
 .access-toggle.on .access-knob { background: #2e9e5b; }
 .access-toggle.on .access-knob::after { transform: translateX(10px); }
 
+/* ---- Per-user page permission matrix ---- */
+.permission-search { max-width: 440px; }
+.permission-matrix { max-height: min(64vh, 680px); }
+.permission-matrix table { min-width: 1320px; }
+.permission-matrix th { white-space: normal; min-width: 138px; line-height: 1.25; }
+.permission-matrix .permission-person-col { position: sticky; left: 0; z-index: 2; min-width: 220px; background: var(--m3-surface); box-shadow: 1px 0 var(--m3-outline-variant); }
+.permission-matrix thead .permission-person-col { z-index: 3; background: var(--m3-surface-container-low); }
+.permission-person-col small { display: block; margin-top: 3px; color: var(--m3-on-surface-variant); font-size: 11px; font-weight: 400; }
+.permission-person-button { width: 100%; border: 0; padding: 10px 14px; margin: -10px -14px; text-align: left; color: inherit; background: transparent; border-radius: 10px; cursor: pointer; font: inherit; }
+.permission-person-button:hover { background: var(--m3-secondary-container); }
+.permission-person-button:focus-visible { outline: 2px solid var(--m3-primary); outline-offset: -2px; }
+.user-details-dialog { width: min(860px, 94vw); max-height: 92vh; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.user-details-header { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 22px 24px 18px; border-bottom: 1px solid var(--m3-outline-variant); }
+.user-details-header h2 { margin: 0 0 3px; }
+.user-details-header p { margin: 0; color: var(--m3-on-surface-variant); font-size: 13px; }
+.user-details-avatar { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; color: var(--m3-on-primary-container); background: var(--m3-primary-container); }
+.user-details-body { padding: 2px 24px 18px; overflow-y: auto; }
+.user-details-body section { padding: 18px 0; border-bottom: 1px solid var(--m3-outline-variant); }
+.user-details-body section:last-child { border-bottom: 0; }
+.user-details-body h3 { margin: 0 0 13px; font-size: 15px; }
+.user-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 24px; margin: 0; }
+.user-detail-item { min-width: 0; }
+.user-detail-item.wide { grid-column: 1 / -1; }
+.user-detail-item dt { margin-bottom: 3px; color: var(--m3-on-surface-variant); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.user-detail-item dd { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.user-permission-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.user-permission-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--m3-outline-variant); border-radius: 12px; }
+.user-permission-row small { display: block; margin-top: 2px; color: var(--m3-on-surface-variant); font-size: 10px; }
+.user-permission-row .res-pill.denied { color: var(--m3-error); background: var(--m3-error-container); }
+.user-details-state { padding: 48px 24px; text-align: center; color: var(--m3-on-surface-variant); }
+.user-details-dialog > .m3-banner { margin: 20px 24px 0; }
+.user-details-dialog > .m3-dialog-actions { margin: 0; padding: 14px 24px; border-top: 1px solid var(--m3-outline-variant); }
+@media (max-width: 680px) {
+  .user-details-grid, .user-permission-list { grid-template-columns: 1fr; }
+  .user-detail-item.wide { grid-column: auto; }
+}
+.permission-select { width: 100%; min-width: 128px; height: 34px; padding: 0 8px; border-radius: 8px; background: var(--m3-surface); font: inherit; font-size: 11.5px; }
+.permission-select.allowed { border: 1px solid #79b991; color: #0f6d38; }
+.permission-select.denied { border: 1px solid #d5a09b; color: var(--m3-error); }
+.permission-select:disabled { opacity: .72; cursor: not-allowed; }
+
 /* ---- Toasts / snackbars ---- */
 .toast-stack { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; width: min(440px, calc(100vw - 32px)); }
 .toast { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; background: #1f2430; color: #fff; box-shadow: 0 10px 30px rgba(16, 24, 40, .28); font-size: 13.5px; animation: toast-in .18s ease-out; }

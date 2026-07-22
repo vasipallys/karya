@@ -325,6 +325,23 @@ function DataView({ action, data, onOpen }) {
           : <span>{it.name}</span>} <em>{it.status}</em></li>
     ))}{data.items.length > 12 && <li>…and {data.items.length - 12} more</li>}</ul>
   }
+  if (action === 'readiness' && Array.isArray(data.items)) {
+    if (data.items.length === 0) return null
+    return <ul className="chatdock-list">{data.items.slice(0, 12).map((it) => (
+      <li key={it.id}><span className="chatdock-lvl">{it.level}</span>
+        {it.id && onOpen
+          ? <button className="chatdock-link" title={`Open ${it.name} in its ${it.level} workspace`}
+              onClick={() => onOpen(it)}>{it.name}</button>
+          : <span>{it.name}</span>} <em>{it.score}% · {it.status_label}</em></li>
+    ))}{data.items.length > 12 && <li>…and {data.items.length - 12} more</li>}</ul>
+  }
+  if (action === 'describe' && data.element) {
+    const item = data.element
+    return <div className="chatdock-score"><strong>{item.level}</strong> {item.status}
+      {typeof data.readiness?.score === 'number' && <> · {data.readiness.score}% ready</>}
+      {item.id && onOpen && <button className="chatdock-link" title={`Open ${item.name} in its ${item.level} workspace`}
+        onClick={() => onOpen(item)}><ArrowUpRight size={12} /> open workspace</button>}</div>
+  }
   if ((action === 'readiness' || action === 'overview') && typeof data.score === 'number') {
     return <div className="chatdock-score"><strong>{data.score}%</strong> {data.status_label}
       {data.id && data.level && onOpen && <button className="chatdock-link" title={`Open ${data.name} in its ${data.level} workspace`}

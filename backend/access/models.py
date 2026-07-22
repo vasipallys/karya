@@ -26,3 +26,8 @@ class AccessCreate(BaseModel):
     staff_id: str = Field(min_length=1)
     role: Role = DEFAULT_ROLE
     enabled: bool = True
+
+
+class PagePermissionsUpdate(BaseModel):
+    # null removes the override and returns the page to the role default.
+    permissions: dict[str, bool | None] = Field(default_factory=dict)

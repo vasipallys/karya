@@ -27,6 +27,55 @@ PATH_PROVIDERS = {"localpath"}
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
+class LLMInvocationError(RuntimeError):
+    """A hosted model request failed before valid structured output arrived.
+
+    Provider SDK exceptions must not leak through API routes as unhandled 500s.
+    Keeping the normalization here also preserves the rule that only this module
+    knows which hosted provider is configured.
+    """
+
+    def __init__(self, message: str, *, retryable: bool = True):
+        super().__init__(message)
+        self.retryable = retryable
+
+
+def _invocation_error(exc: Exception) -> LLMInvocationError:
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if not isinstance(status, int):
+        status = None
+    retryable = status is None or status >= 500 or status in {408, 409, 425, 429}
+    detail = " ".join(str(exc).split()).strip()[:800]
+    message = "The configured LLM request failed."
+    if detail:
+        message += f" {detail}"
+    return LLMInvocationError(message, retryable=retryable)
+
+
+def _hosted_structured_runnable(model: BaseChatModel, schema: type[SchemaT], *, json_mode: bool = False) -> Runnable:
+    """Build a hosted structured-output runnable with a stable error contract."""
+    try:
+        if json_mode:
+            structured = model.with_structured_output(schema, method="json_mode", include_raw=True)
+        else:
+            structured = model.with_structured_output(schema, include_raw=True)
+    except Exception as exc:
+        raise _invocation_error(exc) from exc
+
+    async def invoke(messages, config=None):
+        # Groq rejects response_format=json_object unless at least one message
+        # explicitly contains the word "JSON". Put that provider requirement at
+        # the factory boundary so every structured agent benefits from it.
+        prompted = ([SystemMessage(content="Return one valid JSON object matching the requested schema.")]
+                    + list(messages)) if json_mode else messages
+        try:
+            return await structured.ainvoke(prompted, config=config)
+        except Exception as exc:
+            raise _invocation_error(exc) from exc
+
+    return RunnableLambda(invoke)
+
+
 def validate_factory_config() -> None:
     """Validate provider-specific settings without leaking conditionals elsewhere."""
     config = get_settings().llm
@@ -107,8 +156,8 @@ def get_structured_llm(schema: type[SchemaT]) -> Runnable:
         return RunnableLambda(invoke)
     if config.provider.lower() == "groq":
         # Groq JSON mode avoids tool_use_failed errors from otherwise-valid tool args.
-        return model.with_structured_output(schema, method="json_mode", include_raw=True)
-    return model.with_structured_output(schema, include_raw=True)
+        return _hosted_structured_runnable(model, schema, json_mode=True)
+    return _hosted_structured_runnable(model, schema)
 
 
 def preload_llm() -> None:

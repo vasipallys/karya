@@ -5,6 +5,8 @@ import PlanningDialog from './PlanningDialog'
 
 const emptyUnit = { unit_type: 'squad', name: '', parent_unit_id: '', mission: '', lead_name: '', capacity_fte: 0, target_velocity: 0 }
 const emptyMember = { name: '', resource_staff_id: '', role: '', skills: '', location: '', allocation_percent: 100, monthly_cost: 0 }
+const emptyLead = { staff_first_name: '', staff_last_name: '', staff_type: 'Perm' }
+const NEW_LEAD_VALUE = '__new_lead__'
 
 function number(value) {
   return Number(value || 0)
@@ -18,7 +20,7 @@ function unitRunRate(unit) {
   return unit.members.reduce((total, member) => total + member.monthly_cost * member.allocation_percent / 100, 0)
 }
 
-export default function TeamPlanning({ projectId, l1Id, plan, refresh, setError, money }) {
+export default function TeamPlanning({ projectId, l1Id, plan, refresh, setError, money, canCreateResource = false }) {
   const [unitDialog, setUnitDialog] = useState(null)
   const [memberDialog, setMemberDialog] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -74,6 +76,43 @@ export default function TeamPlanning({ projectId, l1Id, plan, refresh, setError,
     } catch (error) { setError(error) } finally { setBusy(false) }
   }
 
+  const chooseLead = (value) => setUnitDialog((current) => value === NEW_LEAD_VALUE
+    ? { ...current, newLead: { ...emptyLead } }
+    : { ...current, newLead: null, draft: { ...current.draft, lead_name: value } })
+
+  const updateNewLead = (patch) => setUnitDialog((current) => ({
+    ...current,
+    newLead: { ...current.newLead, ...patch },
+  }))
+
+  const createLead = async () => {
+    const draft = unitDialog.newLead
+    if (!draft?.staff_first_name.trim() || !draft?.staff_last_name.trim()) return
+    const staffName = `${draft.staff_first_name.trim()} ${draft.staff_last_name.trim()}`
+    const existing = resources.find((row) => row.staff_name.trim().toLowerCase() === staffName.toLowerCase())
+    if (existing) {
+      setUnitDialog((current) => ({
+        ...current, newLead: null, draft: { ...current.draft, lead_name: existing.staff_name },
+      }))
+      return
+    }
+    setBusy(true)
+    try {
+      const created = await api.createStaff({
+        staff_first_name: draft.staff_first_name.trim(),
+        staff_last_name: draft.staff_last_name.trim(),
+        staff_name: staffName,
+        staff_type: draft.staff_type,
+        staff_status: 'Active',
+        sub_status: 'UnAllocated',
+      })
+      setResources((current) => [...current, created].sort((a, b) => a.staff_name.localeCompare(b.staff_name)))
+      setUnitDialog((current) => ({
+        ...current, newLead: null, draft: { ...current.draft, lead_name: created.staff_name },
+      }))
+    } catch (error) { setError(error) } finally { setBusy(false) }
+  }
+
   const saveMember = async () => {
     setBusy(true)
     try {
@@ -119,6 +158,7 @@ export default function TeamPlanning({ projectId, l1Id, plan, refresh, setError,
 
   const openUnit = (unit = null, type = 'squad', parentId = '') => setUnitDialog({
     editing: unit,
+    newLead: null,
     draft: unit ? {
       unit_type: unit.unit_type, name: unit.name, parent_unit_id: unit.parent_unit_id || '', mission: unit.mission,
       lead_name: unit.lead_name, capacity_fte: unit.capacity_fte, target_velocity: unit.target_velocity,
@@ -205,14 +245,26 @@ export default function TeamPlanning({ projectId, l1Id, plan, refresh, setError,
     </PlanningDialog>}
 
     {unitDialog && <PlanningDialog title={`${unitDialog.editing ? 'Edit' : 'Add'} ${unitDialog.draft.unit_type}`} onClose={() => setUnitDialog(null)}
-      actions={<><button className="m3-btn text" onClick={() => setUnitDialog(null)}>Cancel</button><button className="m3-btn filled" disabled={busy || !unitDialog.draft.name.trim()} onClick={saveUnit}>Save team</button></>}>
+      actions={<><button className="m3-btn text" onClick={() => setUnitDialog(null)}>Cancel</button><button className="m3-btn filled" disabled={busy || !unitDialog.draft.name.trim() || !!unitDialog.newLead} onClick={saveUnit}>Save team</button></>}>
       {!unitDialog.editing && <div className="m3-radio-row">
         {['tribe', 'squad'].map((type) => <label key={type} className={unitDialog.draft.unit_type === type ? 'selected' : ''}><input type="radio" checked={unitDialog.draft.unit_type === type} onChange={() => setUnitDialog({ ...unitDialog, draft: { ...unitDialog.draft, unit_type: type, parent_unit_id: '' } })} />{type === 'tribe' ? 'Agile tribe' : 'Delivery squad'}</label>)}
       </div>}
       <label className="m3-field"><span>Name</span><input autoFocus value={unitDialog.draft.name} onChange={(event) => setUnitDialog({ ...unitDialog, draft: { ...unitDialog.draft, name: event.target.value } })} placeholder={unitDialog.draft.unit_type === 'tribe' ? 'Digital Commerce Tribe' : 'Checkout Squad'} /></label>
       {unitDialog.draft.unit_type === 'squad' && tribes.length > 0 && <label className="m3-field"><span>Parent tribe</span><select value={unitDialog.draft.parent_unit_id} onChange={(event) => setUnitDialog({ ...unitDialog, draft: { ...unitDialog.draft, parent_unit_id: event.target.value } })}><option value="">Independent squad</option>{tribes.map((tribe) => <option key={tribe.id} value={tribe.id}>{tribe.name}</option>)}</select></label>}
       <label className="m3-field"><span>Mission / work details</span><textarea rows={3} value={unitDialog.draft.mission} onChange={(event) => setUnitDialog({ ...unitDialog, draft: { ...unitDialog.draft, mission: event.target.value } })} placeholder="What outcome does this team own?" /></label>
-      <label className="m3-field"><span>Lead</span><select value={unitDialog.draft.lead_name} onChange={(event) => setUnitDialog({ ...unitDialog, draft: { ...unitDialog.draft, lead_name: event.target.value } })}><option value="">— select from resource directory —</option>{unitDialog.draft.lead_name && !resources.some((row) => row.staff_name === unitDialog.draft.lead_name) && <option value={unitDialog.draft.lead_name}>{unitDialog.draft.lead_name} (not in directory)</option>}{resources.map((row) => <option key={row.id} value={row.staff_name}>{row.staff_name}</option>)}</select></label>
+      <label className="m3-field"><span>Lead</span><select value={unitDialog.newLead ? NEW_LEAD_VALUE : unitDialog.draft.lead_name} onChange={(event) => chooseLead(event.target.value)}><option value="">— select from resource directory —</option>{unitDialog.draft.lead_name && !resources.some((row) => row.staff_name === unitDialog.draft.lead_name) && <option value={unitDialog.draft.lead_name}>{unitDialog.draft.lead_name} (not in directory)</option>}{resources.map((row) => <option key={row.id} value={row.staff_name}>{row.staff_name}</option>)}{canCreateResource && <option value={NEW_LEAD_VALUE}>＋ Add new lead to resource directory…</option>}</select></label>
+      {unitDialog.newLead && <div className="m3-banner info">
+        <strong>New directory resource</strong>
+        <p>Create an active, unallocated resource and select them as this team&apos;s lead. Additional details can be completed in Admin → Resources.</p>
+        <div className="l1-form-grid">
+          <label className="m3-field"><span>First name</span><input autoFocus value={unitDialog.newLead.staff_first_name} onChange={(event) => updateNewLead({ staff_first_name: event.target.value })} /></label>
+          <label className="m3-field"><span>Last name</span><input value={unitDialog.newLead.staff_last_name} onChange={(event) => updateNewLead({ staff_last_name: event.target.value })} /></label>
+        </div>
+        <div className="l1-form-grid">
+          <label className="m3-field"><span>Staff type</span><select value={unitDialog.newLead.staff_type} onChange={(event) => updateNewLead({ staff_type: event.target.value })}><option value="Perm">Permanent</option><option value="Contract">Contract</option></select></label>
+          <div className="m3-field"><span>&nbsp;</span><button type="button" className="m3-btn tonal" disabled={busy || !unitDialog.newLead.staff_first_name.trim() || !unitDialog.newLead.staff_last_name.trim()} onClick={createLead}><UserPlus size={15} /> Add &amp; select lead</button></div>
+        </div>
+      </div>}
       <div className="l1-form-grid"><label className="m3-field"><span>Capacity (FTE)</span><input type="number" min="0" step="0.1" value={unitDialog.draft.capacity_fte} onChange={(event) => setUnitDialog({ ...unitDialog, draft: { ...unitDialog.draft, capacity_fte: event.target.value } })} /></label><label className="m3-field"><span>Target velocity / sprint</span><input type="number" min="0" step="1" value={unitDialog.draft.target_velocity} onChange={(event) => setUnitDialog({ ...unitDialog, draft: { ...unitDialog.draft, target_velocity: event.target.value } })} /></label></div>
     </PlanningDialog>}
 

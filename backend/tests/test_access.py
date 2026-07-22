@@ -71,6 +71,34 @@ def test_unknown_staff_rejected():
         access.set_access("missing", AccessUpdate(role="admin"))
 
 
+def test_page_permissions_inherit_override_and_reset():
+    make_staff("Diana", "Prince")
+    viewer = make_staff("Victor", "Stone")
+    initial = access.get_user(viewer["id"])
+    assert initial["page_permissions"]["platforms"] is True
+    assert initial["page_permissions"]["admin_reporting"] is False
+    assert initial["page_permission_overrides"] == {}
+
+    changed = access.set_page_permissions(viewer["id"], {"platforms": False, "admin_reporting": True})
+    assert changed["page_permissions"]["platforms"] is False
+    assert changed["page_permissions"]["admin_reporting"] is True
+    assert changed["page_permission_overrides"] == {"platforms": False, "admin_reporting": True}
+    assert access.page_permission_override(viewer["id"], "page.platforms") is False
+
+    reset = access.set_page_permissions(viewer["id"], {"platforms": None})
+    assert reset["page_permissions"]["platforms"] is True
+    assert "platforms" not in reset["page_permission_overrides"]
+
+
+def test_admin_page_permissions_cannot_be_overridden_and_unknown_pages_rejected():
+    admin = make_staff("Diana", "Prince")
+    with pytest.raises(access.ValidationError):
+        access.set_page_permissions(admin["id"], {"platforms": False})
+    viewer = make_staff("Victor", "Stone")
+    with pytest.raises(access.ValidationError):
+        access.set_page_permissions(viewer["id"], {"not_a_page": True})
+
+
 def test_role_counts_and_reporting_overview():
     diana = make_staff("Diana", "Prince")   # bootstrapped admin
     marcus = make_staff("Marcus", "Chen")

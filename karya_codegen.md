@@ -5,6 +5,11 @@
 > competent engineer (or LLM) can recreate the entire codebase without loss of functionality.
 > Verbatim-critical assets (SQL schema, anchors, permission maps, prompts, mock builders, readiness weights)
 > are reproduced literally; the rest is specified precisely at function level.
+>
+> **Implementation baseline: 22 July 2026.** This revision includes grounded chat description/status reads,
+> provider-tolerant `ChatCommand` parsing, Excel/CSV and LDAP/Active Directory resource imports, inline lead
+> creation, per-user page permissions enforced in UI and API, full user-profile drill-down, the idempotent
+> Northstar Digital organization seed, and the Smart Banking sample-data rename.
 
 ---
 
@@ -27,7 +32,8 @@ grown into a full portfolio/architecture workspace:
 
 **Tech stack**: Python 3.11+ (FastAPI, LangGraph, LangChain, pydantic v2, pydantic-settings, pandas,
 openpyxl, httpx, PyYAML, python-docx, python-pptx), stdlib `sqlite3` persistence; Node 20+ (React 19, Vite,
-`@xyflow/react`, mermaid, vitest + Testing Library); Electron + PyInstaller for desktop.
+`@xyflow/react`, mermaid, vitest + Testing Library); LDAP/Active Directory via `ldap3`; Electron +
+PyInstaller for desktop.
 
 ---
 
@@ -58,7 +64,7 @@ backend/
 ├─ config.py        anchors.py       models.py
 ├─ api/             main.py, streaming.py
 ├─ auth/            deps.py, permissions.py
-├─ access/          models.py, store.py, router.py
+├─ access/          models.py, pages.py, store.py, router.py
 ├─ projects/        models.py, store.py, router.py
 ├─ c4/              models.py, store.py, service.py, router.py, scan.py
 ├─ graph/           build.py, state.py, nodes.py, checkpoint.py
@@ -70,7 +76,7 @@ backend/
 ├─ l2arch/          models.py, store.py, service.py, router.py, imports.py
 ├─ l3arch/          models.py, store.py, service.py, router.py
 ├─ l4arch/          models.py, store.py, service.py, router.py
-├─ resources/       models.py, store.py, router.py
+├─ resources/       models.py, imports.py, store.py, router.py
 ├─ reporting/       service.py, router.py
 ├─ ai/              agents.py, schemas.py, masking.py, nl.py, router.py
 ├─ chat/            service.py, store.py, router.py, graph.py
@@ -411,6 +417,13 @@ CREATE TABLE IF NOT EXISTS app_access (
   role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin','manager','contributor','viewer')),
   enabled INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS app_page_permissions (
+  staff_id TEXT NOT NULL REFERENCES resource_staff(id) ON DELETE CASCADE,
+  page_key TEXT NOT NULL,
+  allowed INTEGER NOT NULL CHECK (allowed IN (0,1)),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (staff_id, page_key)
 );
 -- l1arch strategy tables
 CREATE TABLE IF NOT EXISTS l1_vision (
@@ -847,6 +860,10 @@ PATH_PROVIDERS    = {"localpath"}           # LLM_MODEL is a physical directory;
 - `validate_factory_config()` — unsupported provider error; `LLM_BASE_URL` required for OPENAI_COMPATIBLE;
   `LLM_API_KEY` required unless provider ∈ OFFLINE|LOCAL; for `localpath`, `LLM_MODEL` must be an existing
   directory. Raises `ConfigurationError`.
+- `LLMInvocationError(message, retryable=True)` is the stable hosted-provider failure contract.
+  `_invocation_error` extracts HTTP status/detail without leaking SDK exception types; retryable is True for
+  no-status failures, 408/409/425/429 and 5xx. `main.py` maps it to HTTP 502 `llm_provider_error` and the chat
+  SSE route emits the same code/retryability rather than an unhandled 500.
 - `@lru_cache get_llm()` — mock → `FakeListChatModel(responses=["Mock mode is active; …"])`;
   local/localpath → `LocalHuggingFaceChatModel(...)` (with `local_files_only` forced True for `localpath`);
   OPENAI_COMPATIBLE → `ChatOpenAI(model, temperature, max_tokens, api_key, max_retries=1, base_url)`;
@@ -854,8 +871,9 @@ PATH_PROVIDERS    = {"localpath"}           # LLM_MODEL is a physical directory;
 - `get_structured_llm(schema)` — mock → `MockStructuredLLM(schema)`; local → a `RunnableLambda` that
   prepends `SystemMessage("Return only one valid JSON object matching this JSON Schema. No markdown or
   commentary.\n<compact schema json>")` and returns `{"raw": raw, "parsed": None, "parsing_error": None}`;
-  groq → `with_structured_output(schema, method="json_mode", include_raw=True)` (avoids tool_use_failed);
-  else `with_structured_output(schema, include_raw=True)`.
+  groq → `_hosted_structured_runnable(..., json_mode=True)`; else the same helper without json_mode. The
+  helper normalizes setup/invocation failures and prepends a system message explicitly requesting one JSON
+  object for Groq (Groq rejects `response_format=json_object` when no message says JSON).
 - `preload_llm()` — no-op unless provider is local and `local_preload`; then `start_background_load(get_llm())`.
 - `llm_runtime_status()` — `{"status":"ready"}` for non-local; else `local.runtime_status()`.
 - `prefers_text_routing()` — True for LOCAL_PROVIDERS (small local models are unreliable emitters of the big
@@ -1037,9 +1055,11 @@ prompts). `_json_after(text, label)` extracts the bracket-balanced JSON array/ob
 ```python
 ROLE_CAPS = {
   "admin": ["*"],
-  "manager": ["admin", "admin.reporting", "admin.resources", "platform.create", "platform.edit"],
-  "contributor": ["platform.create", "platform.edit"],
-  "viewer": [],
+  "manager": ["admin", "admin.reporting", "admin.resources", "page.platforms", "page.workspace",
+              "page.ask_ai", "page.guide", "platform.create", "platform.edit"],
+  "contributor": ["page.platforms", "page.workspace", "page.ask_ai", "page.guide",
+                  "platform.create", "platform.edit"],
+  "viewer": ["page.platforms", "page.workspace", "page.ask_ai", "page.guide"],
 }
 def can(role, capability): caps = ROLE_CAPS.get(role or "", []); return "*" in caps or capability in caps
 ```
@@ -1052,32 +1072,44 @@ def can(role, capability): caps = ROLE_CAPS.get(role or "", []); return "*" in c
   `sensitivity='restricted'` (SQL lookup).
 - `resolve_role(request)` — `X-User-Id` header → `effective_role(staff_id)` (authoritative DB lookup);
   else `X-User-Role` header accepted only if it is a known role (bootstrap admin without directory id).
-- `route_policy(method, path) -> (requires_auth, capability|None)`:
-  public paths → (False, None); `/access*` → `admin.access`; `/reporting*` → `admin.reporting`;
-  `/integrations*` → (True, None) for `/integrations/catalog` only, else `admin.integrations`;
-  `/resources*` → GET (True, None), writes `admin.resources`;
-  chat: any path containing `/chat` NOT ending `/chat/apply` with method GET/POST/DELETE → (True, None)
-  (chat reads/proposes; only apply writes); other POST/PATCH/PUT/DELETE → `platform.edit`;
-  everything else → authenticated read (True, None).
+- `capability_allowed(request, role, capability)` — admin always True; otherwise consult
+  `app_page_permissions` via `page_permission_override(X-User-Id, capability)` first, then fall back to the
+  role map. This is the authoritative counterpart of the frontend's effective page-permission map.
+- `route_policy(method, path) -> (requires_auth, capability|string-tuple|None)`:
+  public paths → unauthenticated; `/access/me` → authenticated self; other `/access*` → `admin.access`;
+  `/reporting*` → `admin.reporting`; integration catalog → signed-in, connector config →
+  `admin.integrations`; resource reads → signed-in and resource writes/imports → `admin.resources`;
+  `/ai/*` → `page.ask_ai`; `GET /projects` → `page.platforms`; project creation →
+  (`page.platforms`, `platform.create`); project chat reads/proposals → `page.workspace`; project writes
+  including chat apply → (`page.workspace`, `platform.edit`); other project reads → `page.workspace`.
+  Tuple requirements mean **all** capabilities must pass.
 
 ---
 
 ## 11. Access management — `backend/access/`
 
 - `models.py`: `Role = Literal["admin","manager","contributor","viewer"]`; `ROLES` tuple in that order;
-  `DEFAULT_ROLE = "viewer"`; `AccessUpdate{role?, enabled?}`; `AccessCreate{staff_id, role=viewer, enabled=True}`.
+  `DEFAULT_ROLE = "viewer"`; `AccessUpdate{role?, enabled?}`; `AccessCreate{staff_id, role=viewer,
+  enabled=True}`; `PagePermissionsUpdate{permissions: dict[str,bool|None]}` where null removes an override.
+- `pages.py`: the canonical page registry (`PAGE_DEFINITIONS`, `PAGE_KEYS`, `CAPABILITY_TO_PAGE`):
+  `platforms→page.platforms`, `workspace→page.workspace`, `ask_ai→page.ask_ai`, `guide→page.guide`,
+  `admin_access→admin.access`, `admin_reporting→admin.reporting`, `admin_resources→admin.resources`,
+  `admin_integrations→admin.integrations`. Each definition includes its UI label and description.
 - `store.py`:
-  - `_bootstrap_admin(conn)` — if no enabled admin exists, promote the earliest-created staff
-    (`ORDER BY created_at, staff_code LIMIT 1`) via INSERT … ON CONFLICT DO UPDATE. Called from `list_users`.
-  - `list_users(enabled_only=False)` — all staff LEFT JOIN app_access, `COALESCE(role,'viewer')`,
-    `COALESCE(enabled,1)`, ordered by `staff_name COLLATE NOCASE`; staff fields surfaced: id, staff_code,
-    staff_name, staff_type, staff_status, tech_unit, hr_role (+role, enabled(bool), access_updated_at).
+  - `_bootstrap_admin(conn)` — if no enabled admin exists, promote the earliest-created staff. Admin page
+    overrides are deleted because administrators are the break-glass identity and cannot be denied a page.
+  - `_permission_overrides` reads explicit decisions; `_permission_bundle` returns both effective page
+    decisions and overrides, using role defaults unless an override exists.
+  - `list_users(enabled_only=False)` — all staff LEFT JOIN access, ordered by name; every returned user has
+    `role`, boolean `enabled`, `page_permissions` (effective) and `page_permission_overrides` (explicit).
     `enabled_only` also requires `staff_status == "Active"`.
-  - `set_access(staff_id, payload)` — 404 if staff missing; upsert preserving unspecified fields.
-  - `get_user(staff_id)`; `effective_role(staff_id)` — None if staff unknown; DEFAULT_ROLE if no access row;
-    None if disabled; else role. `role_counts()` — counts per role + `disabled`.
-- `router.py` (prefix `/access`): `GET /roles`, `GET /users`, `GET /login-users` (enabled+active only),
-  `PATCH /users/{staff_id}` (404 on NotFoundError).
+  - `set_access` upserts while preserving omitted fields and clears overrides on promotion to admin;
+    `get_user`; `effective_role` (None when unknown/disabled); `page_permission_override(staff_id,
+    capability)`; `role_counts`.
+  - `set_page_permissions(staff_id, permissions)` rejects unknown keys, rejects any override for an admin,
+    deletes rows for null values, and upserts boolean choices in `app_page_permissions`.
+- `router.py` (prefix `/access`): `GET /roles`, `GET /users`, `GET /pages`, authenticated `GET /me`, public
+  `GET /login-users`, `PATCH /users/{staff_id}`, and `PATCH /users/{staff_id}/page-permissions`.
 
 ---
 
@@ -1418,6 +1450,9 @@ Content-Disposition filename and the right Office media type).
 ### 17.1 `models.py`
 `StaffType=Perm|Contract`; `StaffStatus=Active|Inactive`; `SubStatus=Allocated|UnAllocated|PartiallyAllocated`;
 `LookupCategory/LOOKUP_CATEGORIES=(tech_unit,rank,hr_role)`; `CustomFieldType=text|number|date|select|boolean`.
+- `LdapImportRequest{connector_key: ldap|active_directory="ldap", scope: bulk|single="bulk", identifier?
+  (..320), search_filter="(objectClass=person)" (3..1000), max_results=500 (1..5000),
+  update_existing=False}`; model validator requires `identifier` for single-user scope.
 - `StaffBase{staff_first_name (1..120), staff_last_name (1..120), staff_name (..240, auto-generated from
   first+last when blank via model_validator), staff_type=Perm, staff_status=Active, sub_status=UnAllocated,
   tech_unit/citizenship/rank/hr_role (..120)="", staff_start_date/staff_end_date: date|None (validator:
@@ -1428,7 +1463,30 @@ Content-Disposition filename and the right Office media type).
   required=False, options: list[str] (..100)}` + validator: select fields require >=1 option;
   `CustomFieldUpdate` all optional.
 
-### 17.2 `store.py` — invariants
+### 17.2 `imports.py` — Excel/CSV and directory ingestion
+
+- `ResourceImportError(ValueError)` maps to HTTP 400 `resource_import_error`.
+- `_ALIASES` maps human/LDAP-style headings to fixed fields (First/Given Name, Last/Surname/sn, Display
+  Name, employment type/status, allocation, department, citizenship, grade, job title, start/end dates).
+  `_payload_from_row` accepts First+Last or splits Display Name, normalizes enum aliases, recognizes
+  `Custom: <key>` columns, and returns both the payload and set of fields actually present.
+- `_apply(rows, update_existing, source)` is the shared row engine. Matching is case-insensitive display
+  name; existing people are skipped unless update_existing; updates contain only present fields; all rows
+  pass through normal resource-store validation. Result is `{source, created, updated, skipped, errors,
+  counts}` with row-scoped error messages, so valid rows survive a partial import.
+- `import_excel(content, filename, update_existing=False)` supports CSV, XLSX and XLS (`pandas`, `openpyxl`,
+  `xlrd`), max 5,000 rows, and requires First+Last or Display Name. `template_workbook()` produces a styled
+  `karya-resource-import.xlsx` sample with frozen headings.
+- LDAP helpers RFC-4515-escape identifiers. Single-user scope combines the base filter with uid,
+  sAMAccountName, userPrincipalName, mail, employeeNumber and displayName alternatives and limits to one.
+- `import_ldap` accepts only configured `ldap`/`active_directory` connectors; calls
+  `integrations.store.runtime_config` so required values and enabled state are enforced; uses `ldap3` with
+  15s connect/30s query timeouts and always unbinds. It maps givenName/sn/displayName, employeeType,
+  department/title/country/disabled state and conditionally maps mail/username/employeeNumber/phone into
+  same-named custom fields when those definitions exist. Department/title only populate lookup-backed fields
+  when their exact codes exist.
+
+### 17.3 `store.py` — invariants
 - `NotFoundError(LookupError)`; `ValidationError(ValueError)` (HTTP 400).
 - `_LOOKUP_COLUMN = {tech_unit, rank, hr_role}` map to same-named columns; `_validate_lookups` — a non-blank
   value must be a code in the category's lookup table ("{column} '{value}' is not defined in the {category}
@@ -1453,12 +1511,15 @@ Content-Disposition filename and the right Office media type).
   "A custom field with key 'X' already exists"), `update_custom_field`, `delete_custom_field`;
   `_hydrate_custom_field` parses options JSON + bool required.
 
-### 17.3 `router.py` (prefix `/resources`)
+### 17.4 `router.py` (prefix `/resources`)
 `_guard`: NotFoundError->404 `not_found`, ValidationError->400 `invalid_resource`.
-Routes: `GET /staff` (query filters incl. `search` max_length 160), `POST /staff`,
+Routes: `GET /staff` (query filters incl. `search` max_length 160), `POST /staff`;
+`GET /import/template`; `POST /import/excel?update_existing=` (multipart, non-empty, max 15 MB, threadpool);
+`POST /import/ldap` (threadpool, request schema above);
 `GET|PATCH|DELETE /staff/{staff_id}`; `GET /lookups` (all), `GET|POST /lookups/{category}`,
 `PATCH|DELETE /lookups/{lookup_id}`; `GET|POST /custom-fields`, `PATCH|DELETE /custom-fields/{field_id}`.
-RBAC: GET is any signed-in user (planning dropdowns need it); writes need `admin.resources`.
+RBAC: GET is any signed-in user (planning/profile dropdowns need it); POST/PATCH/DELETE, including both
+imports, require effective `admin.resources` page permission.
 
 ---
 
@@ -1523,10 +1584,13 @@ RBAC: GET is any signed-in user (planning dropdowns need it); writes need `admin
   `DraftTestCase{name, test_type=unit, scenario (..600), expected (..600)}`;
   `DraftChecklistItem{item (1..400), category=code}`; `L4Draft{summary, code_diagram, code_units (..25),
   test_cases (..25), checklist (..20)}`.
-- `ChatCommand{action: overview|list|readiness|report|create_element|update_element|delete_element|
+- `ChatCommand{action: overview|list|describe|readiness|report|create_element|update_element|delete_element|
   create_relation|answer|code|web_search|image|document|help|none = "help", level (..4), name (..200),
   parent (..200), new_name (..200), status (..40), description (..2000), target (..200), label (..120),
-  reply (..12000)}` — reads execute immediately; *_element writes surface as a proposal.
+  reply (..12000)}` — reads execute immediately; *_element writes surface as a proposal. A before-validator
+  on `status` converts None or provider-returned booleans to `""`; guessing that True means a lifecycle
+  status would silently filter reads or create an unsafe mutation. This specifically tolerates providers
+  that return `{"action":"list","level":"L1","status":true}`.
 
 ### 19.2 `masking.py`
 `mask_pii(text)` — regex-redacts emails -> `[email]`, SSN `\d{3}-\d{2}-\d{4}` -> `[id]`, phones
@@ -1534,6 +1598,8 @@ RBAC: GET is any signed-in user (planning dropdowns need it); writes need `admin
 attachments, orchestrator requests before they reach the LLM.
 
 ### 19.3 `nl.py` — deterministic NL helpers (shared by mock + local routing; keep both in sync via this module)
+- `is_write_intent(text)` recognizes create/add/rename/delete/remove/set/update/change/connect/route/link/wire
+  so mutation language reaches write routing before deterministic read classification.
 - `resolve_element_name(fragment, names)` — strip leading filler (the/a/an/new/L1-4), squash to [a-z0-9];
   longest names first; forward containment OR (fragment >= 4 chars) reverse containment.
 - `match_relation(text, names) -> (source, target, label)|None` — trigger words route/connect/link/wire/
@@ -1549,6 +1615,10 @@ attachments, orchestrator requests before they reach the LLM.
   target (resolved) and a `name the route as X` label.
 - `classify_read(text, names, screen_level, screen_element) -> (action, level, name)|None`, checked in order:
   report regex (`next|what should i|recommend|roll.?up|report|estimat`) -> ("report","","");
+  resolved element + describe/details/purpose/responsibilities/"what is … about"/"what does … do" →
+  `describe`; an explicit level plus lifecycle word (active/proposed/reviewed/baselined) → filtered `list`;
+  status/progress with a resolved element or explicit level → scoped `readiness` (so “status of each L1
+  item” cannot become whole-project overview);
   readiness regex -> ("readiness", level-or-screen_level when no name, found-or-screen_element);
   enumerate regex (`list|show|display|enumerate|summar…|how many|which|items|everything`) + (level or a
   type word) -> ("list", level, ""); overview regex (`overview|project status|status|progress|where am i|
@@ -1641,6 +1711,10 @@ system: distil notes, no preamble/markdown/bullets; human `DETAIL NOTES:\n<maske
   else `_invoke(ChatCommand, _CHAT_SYSTEM, human)` with forced-mode override applied after.
 - `_apply_screen_defaults(command, screen_level, screen_element)` — fills omitted list.level /
   readiness.name-or-level from the screen.
+- Before provider routing, Auto-mode messages without write intent run through `classify_read` for **every
+  provider**. Recognizable overview/report/list/describe/readiness questions become deterministic
+  `ChatCommand`s immediately; the LLM remains responsible for writes and genuinely open-ended modes. This
+  prevents a hosted model from widening a scoped request such as “status of each L1 item.”
 
 ### 19.5 `router.py` (tag "ai") — all generation routes `require_llm_config` (503 when unconfigured)
 Error guard: NotFound from any store -> 404; validation errors (planning/c4/l2/l3/l4) -> 400 `invalid`.
@@ -1675,11 +1749,20 @@ Error guard: NotFound from any store -> 404; validation errors (planning/c4/l2/l
 - `dispatch(project_id, command)` — reads run immediately: `overview` (workflow guide -> reply
   "<name> is **P%** through the workflow (stage: S). Next best step: …"), `list` (level+status filters;
   default hides proposed unless a status filter or nothing else matches; data
-  `{level, status, items: [{id,level,name,status}]}`), `readiness` (named element via the level's readiness
-  scorer -> "**name** (Lx) is at **S%** — label."; or level-wide from the workflow guide -> "Lx average
-  readiness is **A%** (r/c ready)."), `report` (roll-up + next step sentence), `web_search`, and
+  `{level, status, items: [{id,level,name,status}]}`), `describe`, `readiness`, `report` (roll-up + next step
+  sentence), `web_search`, and
   answer/code/image/document echo `command.reply`. Writes -> `_propose`. Anything else -> help text
   (bullet list of example commands).
+- `_describe(project_id, command)` resolves one element and loads its level workspace via
+  `l1_store.get_baseline` / `l2_store.get_workspace` / `l3_store.get_workspace` /
+  `l4_store.get_workspace`. The deterministic Markdown answer combines level/kind/status, parent, stored C4
+  description (fallback architecture summary/vision), tech/code path, children, artifact counts, relations
+  and readiness. Structured data returns the element, parent, children, relations, architecture/vision text,
+  artifact counts and `{score,status_label}`. It never asks the model to invent a description.
+- `_readiness`: named element → its level scorer; level-wide → score **every element** at that level, sort by
+  name, and return `{level,count,ready,avg_readiness,items:[{id,name,level,status,score,status_label}]}`.
+  This is the contract for “status of each L1 item”; the project workflow percentage is deliberately not
+  substituted for individual scores.
 - `_web_search(command)` — GET `https://html.duckduckgo.com/html/?q=<quote_plus(query[:500])>` with UA
   "Karya/2.0 research assistant", timeout 10, follow_redirects; regex `class="result__a" href` anchors, up to
   6 sources; strips tags, unescapes, fixes `//` URLs, unwraps DDG `uddg` redirect params; reply is a Markdown
@@ -1698,9 +1781,12 @@ Error guard: NotFound from any store -> 404; validation errors (planning/c4/l2/l
 `ChatAgentState` TypedDict: project_id, message, history, attachment_context, mode, screen, plan, facts,
 tool_runs, verdict, final. Nodes:
 - `planner` (async) — `agents.interpret_chat` -> `{plan: command.model_dump()}`.
-- `retrieval` — element counts by level, proposed count, first-12 names, summary string.
-- `tools` — always runs roll-up ("x/y stories estimated · N points") and workflow guide ("P% … next: …");
-  plus readiness of any element whose name appears in the message (longest first).
+- `retrieval` — normally element counts by level, proposed count, first-12 names and summary. For a scoped
+  `describe`, it instead returns that element's stored fields, parent and children so evidence does not get
+  diluted by whole-project counts.
+- `tools` — for scoped `describe`, returns only `element_context`; for named/level readiness, returns only the
+  relevant readiness result(s), including every item for a level. Other requests run roll-up and workflow
+  guide plus readiness of a named element. This keeps the Agent evidence aligned with the actual question.
 - `judge` — `sufficient = action not in (help, none) and >=1 evidence branch`; verdict includes reason.
 - `respond` — rebuilds `ChatCommand(**plan)` and calls `chat_service.dispatch` (same proposal-first contract
   as the non-streaming path); attaches `evidence = {retrieval, tools, verdict}`.
@@ -1735,7 +1821,8 @@ title to text[:80]; always bumps updated_at); `add_attachment` (returns record w
   returns `{**result, conversation_id}`.
 - `POST /chat/stream` — SSE over `get_chat_graph().astream(state, stream_mode="updates")`: `branch` event per
   parallel branch as it lands, `judge` event, final `result` (exact same shape as POST /chat, persisted);
-  errors emitted as `error` events with the same code mapping (+`chat_invalid`).
+  errors emitted as `error` events with the same code mapping (+`chat_invalid`); hosted failures emit
+  `llm_provider_error` with factory-derived retryability.
 - `POST /chat/apply` — `service.apply` (RBAC: needs `platform.edit`; all other chat routes are any-signed-in).
 
 ---
@@ -1812,6 +1899,9 @@ Helpers: `is_configurable`, `archetype_for`, `fields_for` (copies; [] when not c
   `^(https?|ldaps?)://`); returns `{ok, message}` ("Configuration looks valid. Saved settings are complete
   and well-formed." on success). Not a live connection test.
 - `configured_keys()` — keys with enabled=1 (drives catalog 'connected').
+- `runtime_config(key)` — **server-internal only** accessor for live adapters such as LDAP. It requires an
+  enabled config and every required key, then returns stored values including secrets. Never expose this
+  return value from a router; public `get_config` remains secret-redacted.
 
 ### 22.4 `router.py` (prefix `/integrations`)
 `ConfigPayload{values: dict[str,str] = {}, enabled: bool = False}`. Unknown connector (not in
@@ -2112,27 +2202,35 @@ Errors: NotFound->404; L2ArchValidationError|ImportError_ -> 400 `l2arch_validat
   config/health/jiraInstances/jiraIssues/parseUpload/estimate/estimateBatch/estimateUpload/writePoints/
   templateUrl; project + c4 + rollup + estimateElement; the full l1 plan/diagram/requirements set incl.
   generateDiagram/assistDiagram/assistProjectDiagram + exportRequirement; resources staff/lookups/
-  custom-fields; access + reporting; agentic AI (reportingNarrative, aiStaffing/applyStaffing, aiDecompose/
+  custom-fields plus Excel template/import and LDAP/Active Directory import; access users, page registry,
+  effective-user access and per-user page overrides; reporting; agentic AI (reportingNarrative,
+  aiStaffing/applyStaffing, aiDecompose/
   applyDecompose, aiScaffold/applyScaffold, aiL1Baseline/applyL1Baseline, aiL2/3/4Baseline + applies,
   aiOrchestrate, aiSummarize); l1 arch CRUD + approvals + exportL1Summary + traceability/impact/comments +
   importJiraToL1; full l2/l3/l4 arch CRUD + raci + approvals + imports; workflowGuide; chat + chatStream +
   chatApply + conversations + attachments upload; integrationCatalog + per-connector config/test/clear).
 
 ### 27.3 Auth — `src/auth/`
-- `permissions.js` — `ROLE_LABELS` (Administrator/Manager/Contributor/Viewer) + `ROLE_CAPS` **identical to
-  the backend map** (section 10.1) + `can(role, capability)`.
-- `AuthContext.jsx` — localStorage-persisted `{staff_id, name, role, staff_code}` under `karya.auth.user`;
-  provides `{user, role, signIn, signOut, can}`; `useAuth()` hook throws outside provider.
+- `permissions.js` — `ROLE_LABELS` + `ROLE_CAPS` **identical to the backend map** (section 10.1),
+  `CAPABILITY_PAGE`, and `can(role, capability, pagePermissions)`. An explicit page override wins over the
+  role default; administrator remains an unconditional allow safeguard.
+- `AuthContext.jsx` — localStorage-persisted `{staff_id, name, role, staff_code, page_permissions}` under
+  `karya.auth.user`; provides `{user, role, signIn, signOut, can, refreshAccess}`. For directory identities,
+  sign-in and window-focus call `GET /access/me` so role/page changes take effect without a new browser
+  session. `useAuth()` throws outside the provider.
 
 ### 27.4 App shell — `src/App.jsx`
 State-based router (no router lib): `route.name ∈ home | wizard | project | quick | admin`. Renders `Login`
 when signed out. On identity change, always resets to home (avoids showing a prior session's admin page).
 Loads `/config` + `/health` after sign-in; top bar shows the LLM chip ("provider · model" or "LLM not
-configured") and per-Jira-instance ok/bad chips + a user menu (avatar initials, sign-out). Nav: Platforms,
-Admin (capability `admin` only), **Ask AI** (opens `AskAiDialog` → `/ai/orchestrate`; `resolveAiDestination`
+configured") and per-Jira-instance ok/bad chips + a user menu (avatar initials, sign-out). Top-level entries
+are gated individually by `page.platforms`, `page.workspace`, `page.ask_ai`, and `page.guide`; Admin appears
+when at least one Admin subsection capability is effective. **Ask AI** opens `AskAiDialog` →
+`/ai/orchestrate`; `resolveAiDestination`
 maps the action to a workspace tab / admin / needs-open-project toast; mapping in `askAiRouting.js`:
 generate_l1_baseline→planning, auto_staffing→planning, decompose_story→canvas, scaffold_c4→canvas,
-review_readiness→rollup, reporting_narrative→admin), and a Guide link (`/help/guide.html`). Configuration
+review_readiness→rollup, reporting_narrative→admin. The Guide link is cache-busted as
+`/help/guide.html?v=20260722`. Configuration
 errors from `/health` render as an error banner. `workspaceTab` token forwards Ask-AI tab requests into the
 open ProjectWorkspace.
 
@@ -2168,11 +2266,16 @@ open ProjectWorkspace.
   Right pane `PipelineView` (live steps); `BatchTable` lists batch results (click → `ResultCard`);
   `ResultCard` shows the single result; Jira write-back button per row when `jira_write_enabled` (confirm
   dialog → `writePoints` with confirm:true).
-- **AdminConsole.jsx** — capability-filtered sections: Access management (`admin.access`), Reporting
-  (`admin.reporting`), Resources (`admin.resources` — the ResourceDirectory screen moved here), Integrations
-  (visible with `admin.reporting`; configuring needs `admin.integrations`).
+- **AdminConsole.jsx** — capability-filtered sections: Access management (`admin.access`), **Page
+  permissions** (`admin.access`), Reporting (`admin.reporting`), Resources (`admin.resources`), and
+  Integrations (`admin.integrations`). It selects the first section the current identity may access.
 - **admin/AccessManagement.jsx** — user table (search by name/code), role `<select>` per row + enabled
   toggle via `PATCH /access/users/{id}`; guards demoting/disabling the LAST enabled admin client-side.
+- **admin/PagePermissions.jsx** — searchable person × page matrix over the server page registry. Each cell
+  selects Role default / Allow / Deny and persists only an override; role-default effective state is shown
+  in the control. Administrator cells are fixed allowed. Clicking a person opens a complete profile dialog
+  assembled from the directory, lookups, custom fields, manager/direct reports, application access, and the
+  effective permission source for every page.
 - **admin/Reporting.jsx** — stat cards + breakdown bars from `/reporting/overview` (portfolio, resources,
   per-platform table) + an **AI summary** button calling `/reporting/narrative` and rendering
   headline/summary/highlights/risks/recommendations.
@@ -2184,7 +2287,9 @@ open ProjectWorkspace.
 - **ResourceDirectory.jsx** — staff table with filters (status/sub-status/type/tech-unit/rank/hr-role +
   search), add/edit staff dialog (fixed columns + reporting manager select + custom-field inputs rendered by
   type), delete; **"Lists & fields" dialog** managing the three lookup tables and custom-field definitions
-  (text/number/date/select/boolean, required, options).
+  (text/number/date/select/boolean, required, options). The import actions download an Excel template,
+  upload `.xlsx`/`.xls`/`.csv` files for preview + confirmed bulk upsert, or open the directory dialog for a
+  single/bulk LDAP or Active Directory pull (base/filter/limit/update-existing controls and result summary).
 
 ### 27.6 C4 canvas — `src/c4/`
 - **C4Canvas.jsx** — React Flow canvas of the CURRENT drill level (breadcrumb "System landscape ▸ …";
@@ -2228,8 +2333,11 @@ open ProjectWorkspace.
   `MarkdownViewer` (live Mermaid) with **Download md/docx/pptx** (renders mermaid to PNGs via
   `renderMermaidImages` and POSTs them so Word/PPTX embed diagrams). `FlowForward` bridges vision→epics.
 - **TeamPlanning.jsx** — tribes/squads hierarchy or grid view; unit add/edit dialog (type, name, parent
-  tribe, mission, lead, capacity FTE, target velocity); member dialog (link to directory staff via select —
-  active staff only — or free-text name, role, skills, location, allocation %, monthly cost); computed unit
+  tribe, mission, directory-backed lead, capacity FTE, target velocity). The lead selector lists active
+  resources and, for `admin.resources`, offers **Add new lead…**: create the missing staff record inline,
+  de-duplicate by name, refresh the shared resource data, and select the new person. Member dialog links to
+  active directory staff via select — or free-text name, role, skills, location, allocation %, monthly cost;
+  computed unit
   run-rates; **AI staffing** (`aiStaffing` → proposal list with reasons, checkbox select → `applyStaffing`,
   reports partial errors).
 - **WorkCostPlanning.jsx** — work-item table + timeline bars (min/max date span), add/edit dialog (title,
@@ -2299,7 +2407,9 @@ open ProjectWorkspace.
   set the backend `mode`. Sends via `chatStream` SSE showing live **agent activity** (Planner/Retrieval/
   Tools branch chips + Judge verdict from the concurrent graph), falls back to plain `POST /chat` if the
   stream fails. Replies render as GFM markdown; structured `DataView` for list (clickable element rows →
-  `onOpenElement`), readiness score chips, per-level overview chips; **proposed mutations** render an
+  `onOpenElement`), per-element readiness/status rows and level-overview chips. Descriptions are drawn from
+  deterministic application data after name resolution, including scoped L2/L3/L4 architecture details;
+  **proposed mutations** render an
   Apply/Dismiss card (Apply hidden without `platform.edit`; apply → `chatApply` → toast + `onChanged`
   refresh + "Open <name>" deep-link); "Agent evidence" collapsible (retrieval summary, tool calls, judge
   reason). Conversation history sidebar (list/new/open/delete via the conversations API; first user message
@@ -2330,7 +2440,8 @@ Frontend tests (vitest + Testing Library, jsdom): `InspectorPanel.test.jsx`, `Ro
 `AiAssist.test.jsx`, `AskAiDialog.test.jsx`, `ChatDock.test.jsx`, `DockablePanel.test.jsx`,
 `FlowForward.test.jsx`, `LevelBreadcrumb.test.jsx`, `MermaidWorkbench.test.jsx`, `ResultCard.test.jsx`,
 `askAiRouting.test.js`, `ProjectsHome.test.jsx`, `DiagramStudio.test.jsx`, `L2Architecture.test.jsx`,
-`RequirementsPlanning.test.jsx`, `TeamPlanning.test.jsx`, `devHandoff.test.js`, `mermaidModel.test.js`.
+`RequirementsPlanning.test.jsx`, `TeamPlanning.test.jsx`, `PagePermissions.test.jsx`,
+`ResourceDirectory.test.jsx`, `permissions.test.js`, `devHandoff.test.js`, `mermaidModel.test.js`.
 
 ---
 
@@ -2364,7 +2475,7 @@ Frontend tests (vitest + Testing Library, jsdom): `InspectorPanel.test.jsx`, `Ro
   CORS including `null`. Copied to the user's app-data on first desktop launch.
 - **`pyinstaller/karya-api.spec`** — Analysis of `desktop/backend_launcher.py`; hiddenimports =
   `collect_submodules("backend")` (minus tests) + langchain_anthropic/google_genai/groq/mistralai/openai,
-  langgraph, langgraph.checkpoint.sqlite, docx, pptx; `KARYA_BUNDLE_LOCAL_LLM=1` additionally bundles
+  langgraph, langgraph.checkpoint.sqlite, docx, pptx, and `ldap3`; `KARYA_BUNDLE_LOCAL_LLM=1` additionally bundles
   transformers/accelerate/safetensors/torch + sentencepiece/tiktoken(+tiktoken_ext.openai_public). onefile
   EXE `karya-api`, console=True. **A new LLM provider or optional dep must be added to hiddenimports** or
   it's missing at runtime.
@@ -2393,8 +2504,12 @@ Frontend tests (vitest + Testing Library, jsdom): `InspectorPanel.test.jsx`, `Ro
   directly through the stores. Safe to re-run (new project each time).
 - **seed_banking.py** — richer multi-level retail-banking sample; descriptions written as estimation
   evidence so every L3 is immediately estimable; includes relations, cross-cutting tags, artifacts.
-- **seed_resources.py** — seeds extra lookups, custom fields (created only if absent) and sample staff
-  (fresh staff codes each run) through `backend.resources.store`.
+- **seed_resources.py** — idempotently seeds the **Northstar Digital** sample organization: 47 people
+  (45 active, 2 inactive), an executive-to-team reporting hierarchy across eight tech units, realistic HR
+  roles/ranks/locations/skills, application roles, and selected page-permission examples. Stable employee
+  numbers plus `sample_seed=northstar_sample_organization_v1` identify owned rows; re-runs update only those
+  records and their reporting lines, never user-created people matched merely by name. It also creates the
+  required lookups/custom fields when absent. Run with `npm run api:seed:resources`.
 - **setup_local_llm.py** — one-time local-model prep: requires `LLM_PROVIDER=local`; downloads/validates the
   configured HF model + tokenizer into the cache; `--verify-load` additionally loads weights onto the device
   as a RAM/VRAM test. (`scripts/testlocalpathllm.py` is a manual localpath smoke script.)
@@ -2410,7 +2525,8 @@ Frontend tests (vitest + Testing Library, jsdom): `InspectorPanel.test.jsx`, `Ro
   AsyncSqliteSaver process-wide, which otherwise leaks into later direct-graph tests
   ("threads can only be started once").
 - Tests run against `LLM_PROVIDER=mock` and a temp `KARYA_DB`; FastAPI `TestClient` for API tests with
-  `X-User-Role: admin` style headers for RBAC. Suite (~24 files): test_access, test_ai (agentic proposals +
+  `X-User-Role: admin` style headers for RBAC. Suite (25 files): test_access (roles, page registry,
+  effective overrides and safeguards), test_ai (agentic proposals +
   applies), test_c4_store (level rules, artifacts, rollup), test_chat (interpreter routing, dispatch,
   proposals/apply, attachments, conversations — largest file), test_deep_flow / test_deep_invariants /
   test_deep_rbac_abac (end-to-end + invariant + security sweeps), test_diagram_ai, test_graph_routing
@@ -2420,7 +2536,8 @@ Frontend tests (vitest + Testing Library, jsdom): `InspectorPanel.test.jsx`, `Ro
   `test_jira_import_requires_configured_instance`), test_l2arch / test_l3arch / test_l4arch, test_local_llm
   (message normalization, load states, GGUF rejection), test_mapping (Jira ADF/AC mapping), test_mock_llm
   (determinism), test_rbac (route policy), test_resources, test_structured_output (`_parse_structured_result`
-  quirks + `_schema_contract`), test_support_all, test_workflow.
+  quirks + `_schema_contract` and provider error wrapping), test_support_all, test_workflow. Resource tests
+  cover Excel preview/commit, LDAP mapping/import boundaries, directory invariants and custom fields.
 
 ---
 
@@ -2436,14 +2553,18 @@ Non-negotiable behaviors to preserve when regenerating:
    executive summaries are pure computations; the LLM never produces numbers that persist.
 4. **Proposal-first AI** — every agentic service returns a draft; separate `/apply` endpoints persist after
    user review; scaffold/decompose/import outputs land as `status='proposed'` and are excluded from roll-ups.
-5. **RBAC parity** — `backend/auth/permissions.py` and `frontend/src/auth/permissions.js` must stay
-   identical; `route_policy` is the backend enforcement map; ABAC restricted-project check runs after.
+5. **RBAC + page-override parity** — `backend/auth/permissions.py` and
+   `frontend/src/auth/permissions.js` must stay identical. For page capabilities an explicit per-user
+   Allow/Deny overrides the role default in both UI and API; administrators are always allowed to prevent
+   lockout. `route_policy` is the backend enforcement map; ABAC restricted-project checking runs after it.
 6. **C4 level rule** — a parent is exactly one level up, enforced in the store AND re-checked on chat apply
    (`_resolve_parent`).
 7. **Jira write-back triple gate** — env flag + request confirm + UI confirmation.
 8. **Config errors never crash startup** — they land in `app.state.configuration_errors`; `/health` reports;
    LLM-dependent routes 503.
 9. **Secrets are write-only** in integration configs (`secrets_set` only on read; blank = keep).
+   Directory imports obtain enabled connector credentials through server-only `runtime_config`; secrets
+   never cross the API response boundary.
 10. **Session/thread continuity** — estimation session_id == LangGraph thread_id; refinement reuses the
     stored artifact session id.
 11. **Mock-mode completeness** — `LLM_PROVIDER=mock` must exercise every LLM-touching feature offline with
@@ -2451,7 +2572,16 @@ Non-negotiable behaviors to preserve when regenerating:
     (RESOURCE POOL, L1 INITIATIVE:, DIAGRAM TYPE:, USER MESSAGE:, `- L2 · name (status)` listings, …) are
     load-bearing contracts between agents.py/diagram_ai.py and llm/mock.py.
 12. **Desktop URL injection** — the web bundle must read `window.karya.apiBaseUrl` before VITE_API_BASE_URL.
-13. Keep `AGENTS.md` in sync with `CLAUDE.md` when editing architecture notes.
+13. **Deterministic chat reads** — recognized list/status/readiness/description questions must resolve names
+    against the graph, then use application stores/readiness services for facts. The LLM only interprets
+    intent. `ChatCommand.status` normalizes provider booleans to strings so Groq/local/localpath/mock/hosted
+    output quirks do not fail Pydantic validation.
+14. **Resource write path** — manual entry, inline lead creation, Excel/CSV import and LDAP/AD import all
+    persist through `backend.resources.store`; lookup, manager, custom-field and staff-code invariants remain
+    centralized there.
+15. **Idempotent sample organization** — the resource seed owns rows only through stable employee numbers
+    plus its `sample_seed` marker; it must never rewrite unrelated user-created directory records.
+16. Keep `AGENTS.md` in sync with `CLAUDE.md` when editing architecture notes.
 
 ### Suggested regeneration order
 1. Scaffold repo + root/front/desktop package.json, requirements, env examples, pytest.ini.

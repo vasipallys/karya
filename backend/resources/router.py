@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 
-from backend.resources import store
+from backend.resources import imports, store
 from backend.resources.models import (
     CustomFieldCreate,
     CustomFieldUpdate,
     LookupCreate,
     LookupUpdate,
+    LdapImportRequest,
     StaffCreate,
     StaffUpdate,
 )
@@ -26,6 +29,8 @@ def _guard(operation: Any) -> Any:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
     except store.ValidationError as exc:
         raise HTTPException(status_code=400, detail={"code": "invalid_resource", "message": str(exc)}) from exc
+    except imports.ResourceImportError as exc:
+        raise HTTPException(status_code=400, detail={"code": "resource_import_error", "message": str(exc)}) from exc
 
 
 # ------------------------------------------------------------------ staff
@@ -55,6 +60,40 @@ async def list_staff(
 @router.post("/staff")
 async def create_staff(payload: StaffCreate) -> dict[str, Any]:
     return _guard(lambda: store.create_staff(payload))
+
+
+@router.get("/import/template")
+async def import_template() -> Response:
+    return Response(
+        content=imports.template_workbook(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="karya-resource-import.xlsx"'},
+    )
+
+
+@router.post("/import/excel")
+async def import_excel(file: UploadFile = File(...), update_existing: bool = False) -> dict[str, Any]:
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail={"code": "empty_file", "message": "The import file is empty."})
+    if len(content) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail={"code": "file_too_large", "message": "Resource imports are limited to 15 MB."})
+    return await run_in_threadpool(
+        lambda: _guard(lambda: imports.import_excel(
+            content, file.filename or "resources.xlsx", update_existing=update_existing,
+        ))
+    )
+
+
+@router.post("/import/ldap")
+async def import_ldap(payload: LdapImportRequest) -> dict[str, Any]:
+    return await run_in_threadpool(
+        lambda: _guard(lambda: imports.import_ldap(
+            payload.connector_key, payload.search_filter, payload.max_results,
+            update_existing=payload.update_existing,
+            identifier=payload.identifier if payload.scope == "single" else None,
+        ))
+    )
 
 
 @router.get("/staff/{staff_id}")

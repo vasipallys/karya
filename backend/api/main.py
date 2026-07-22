@@ -21,7 +21,7 @@ from backend.ingest.excel import UploadError, dataframe_payload, read_upload, ro
 from backend.jira.client import JiraError
 from backend.jira.registry import get_jira_registry
 from backend.llm.local import LocalModelInferenceError, LocalModelLoadingError
-from backend.llm.factory import llm_runtime_status, preload_llm, validate_factory_config
+from backend.llm.factory import LLMInvocationError, llm_runtime_status, preload_llm, validate_factory_config
 from backend.models import (
     BatchEstimateRequest,
     ErrorPayload,
@@ -31,8 +31,7 @@ from backend.models import (
 )
 from backend.access.router import router as access_router
 from backend.ai.router import router as ai_router
-from backend.auth.deps import resolve_role, restricted_block, route_policy
-from backend.auth.permissions import can
+from backend.auth.deps import capability_allowed, resolve_role, restricted_block, route_policy
 from backend.integrations.router import router as integrations_router
 from backend.l1arch.router import router as l1arch_router
 from backend.l2arch.router import router as l2arch_router
@@ -110,8 +109,10 @@ async def rbac_middleware(request: Request, call_next):
         role = resolve_role(request)
         if role is None:
             return error_response("unauthenticated", "Sign in required.", 401)
-        if capability and not can(role, capability):
-            return error_response("forbidden", f"Your role does not permit this action ({capability}).", 403)
+        required = capability if isinstance(capability, tuple) else ((capability,) if capability else ())
+        denied = next((item for item in required if not capability_allowed(request, role, item)), None)
+        if denied:
+            return error_response("forbidden", f"Your access does not permit this action ({denied}).", 403)
         if restricted_block(request.url.path, role):
             return error_response("forbidden", "This workspace is restricted to managers and admins.", 403)
     return await call_next(request)
@@ -178,6 +179,11 @@ async def local_model_loading_error(_: Request, exc: LocalModelLoadingError) -> 
 @app.exception_handler(LocalModelInferenceError)
 async def local_model_inference_error(_: Request, exc: LocalModelInferenceError) -> JSONResponse:
     return error_response("model_inference_error", str(exc), 502, retryable=True)
+
+
+@app.exception_handler(LLMInvocationError)
+async def llm_invocation_error(_: Request, exc: LLMInvocationError) -> JSONResponse:
+    return error_response("llm_provider_error", str(exc), 502, retryable=exc.retryable)
 
 
 @app.get("/health")

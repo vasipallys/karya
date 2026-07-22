@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.ai import agents
 from backend.api.main import app
 from backend.c4 import store as c4_store
 from backend.c4.models import C4ElementCreate
@@ -17,6 +18,8 @@ from backend.projects.store import create_project
 from backend.storage import db
 from backend.config import get_settings
 from backend.llm.factory import get_llm
+from backend.l2arch import store as l2_store
+from backend.l2arch.models import L2Update
 
 
 @pytest.fixture
@@ -135,6 +138,79 @@ def test_readiness_of_named_element():
         res = _chat(client, pid, "readiness of onboarding-web").json()
         assert res["action"] == "readiness"
         assert res["data"]["name"] == "onboarding-web" and "score" in res["data"]
+
+
+def test_status_of_each_level_item_returns_per_item_readiness(monkeypatch):
+    """A level-scoped status question is not a project overview: every element
+    at that level must carry its own deterministic readiness percentage."""
+    async def unexpected_llm(*args, **kwargs):
+        pytest.fail("grounded level status must not call the LLM")
+
+    monkeypatch.setattr(agents, "_invoke", unexpected_llm)
+    pid, _, _ = _scope()
+    c4_store.create_element(pid, C4ElementCreate(level="L1", name="Core CRM"))
+
+    with TestClient(app) as client:
+        res = _chat(client, pid, "what is status of each L1 item").json()
+        assert res["action"] == "readiness"
+        assert res["data"]["level"] == "L1"
+        assert {item["name"] for item in res["data"]["items"]} == {"Digital banking", "Core CRM"}
+        assert all(isinstance(item["score"], int) and item["status_label"] for item in res["data"]["items"])
+        assert "readiness by item" in res["reply"]
+
+        streamed = client.post(
+            f"/projects/{pid}/chat/stream",
+            json={"message": "what is status of each L1 item"},
+            headers=ADMIN,
+        )
+        assert '"action": "readiness"' in streamed.text
+        assert '"tool": "l1_readiness"' in streamed.text
+        assert '"tool": "rollup"' not in streamed.text
+
+
+@pytest.mark.parametrize("question", [
+    "what is L2 Client-service about",
+    "what is L2 Client-service about, give me description",
+    "tell me about the L2 Client service",
+])
+def test_element_description_uses_persisted_model_and_architecture_context(monkeypatch, question):
+    async def unexpected_llm(*args, **kwargs):
+        pytest.fail("a resolved element description must not call the LLM")
+
+    monkeypatch.setattr(agents, "_invoke", unexpected_llm)
+    pid, l1_id, _ = _scope()
+    l2 = c4_store.create_element(pid, C4ElementCreate(
+        level="L2",
+        name="client-service",
+        kind="container",
+        description="Manages client profiles and servicing workflows.",
+        parent_id=l1_id,
+        tech="Spring Boot",
+        code_path="services/client-service",
+    ))
+    c4_store.create_element(pid, C4ElementCreate(
+        level="L3", name="profile-api", parent_id=l2["id"], description="Exposes client profile operations."
+    ))
+    l2_store.update_l2(pid, l2["id"], L2Update(
+        summary="The client domain boundary for profile, preferences, and servicing capabilities."
+    ))
+
+    with TestClient(app) as client:
+        response = _chat(client, pid, question)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["action"] == "describe"
+        assert "Manages client profiles and servicing workflows" in result["reply"]
+        assert "client domain boundary" in result["reply"]
+        assert "Digital banking" in result["reply"] and "profile-api" in result["reply"]
+        assert "Spring Boot" in result["reply"] and "services/client-service" in result["reply"]
+        assert result["data"]["element"]["id"] == l2["id"]
+        assert result["data"]["parent"]["name"] == "Digital banking"
+
+        streamed = client.post(f"/projects/{pid}/chat/stream", json={"message": question}, headers=ADMIN)
+        assert '"action": "describe"' in streamed.text
+        assert '"tool": "element_context"' in streamed.text
+        assert '"tool": "rollup"' not in streamed.text
 
 
 def test_unknown_element_is_a_clean_400():
@@ -353,6 +429,32 @@ def test_chat_stream_write_proposal_and_error_paths():
         res = client.post(f"/projects/{pid}/chat/stream",
                           json={"message": "readiness of does-not-exist"}, headers=ADMIN)
         assert "event: error" in res.text and '"code": "chat_invalid"' in res.text
+
+
+def test_hosted_llm_failure_has_json_and_stream_error_contracts(monkeypatch):
+    """Provider SDK failures must be visible to the UI, never raw ASGI 500s."""
+    from backend.llm.factory import LLMInvocationError
+
+    async def fail(*args, **kwargs):
+        raise LLMInvocationError("The configured LLM request failed. quota exceeded", retryable=True)
+
+    monkeypatch.setattr(agents, "interpret_chat", fail)
+    pid, _, _ = _scope()
+    with TestClient(app) as client:
+        response = _chat(client, pid, "list L2")
+        assert response.status_code == 502
+        assert response.json()["error"] == {
+            "code": "llm_provider_error",
+            "message": "The configured LLM request failed. quota exceeded",
+            "details": None,
+            "retryable": True,
+        }
+
+        streamed = client.post(f"/projects/{pid}/chat/stream", json={"message": "list L2"}, headers=ADMIN)
+        assert streamed.status_code == 200
+        assert "event: error" in streamed.text
+        assert '"code": "llm_provider_error"' in streamed.text
+        assert '"retryable": true' in streamed.text
 
 
 def test_update_status_via_chat():

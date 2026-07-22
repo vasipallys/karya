@@ -72,7 +72,12 @@ export default function App() {
   const configurationError = health?.llm?.errors?.length
     ? `Backend configuration: ${health.llm.errors.join('; ')}`
     : error ? String(error.message || error) : null
-  const showAdmin = can('admin')
+  const showPlatforms = can('page.platforms')
+  const showWorkspace = can('page.workspace')
+  const showAskAi = can('page.ask_ai')
+  const showGuide = can('page.guide')
+  const showAdmin = ['admin.access', 'admin.reporting', 'admin.resources', 'admin.integrations']
+    .some((capability) => can(capability))
 
   const go = (name) => setRoute({ name })
 
@@ -91,15 +96,15 @@ export default function App() {
 
   return <div className="m3 app-shell">
     <header className="m3-topbar">
-      <button className="m3-brand" onClick={() => go('home')} aria-label="Karya home">
+      <button className="m3-brand" onClick={() => go(showPlatforms ? 'home' : showAdmin ? 'admin' : 'home')} aria-label="Karya home">
         <span className="m3-brand-mark"><BrainCircuit size={20} /></span>
         <span style={{ textAlign: 'left' }}><strong>Karya</strong><small>C4 workspace · evidence-led estimation</small></span>
       </button>
       <nav className="m3-topbar-nav">
-        <button className={route.name === 'home' || route.name === 'project' || route.name === 'wizard' ? 'active' : ''} onClick={() => go('home')}>Platforms</button>
+        {showPlatforms && <button className={route.name === 'home' || route.name === 'project' || route.name === 'wizard' ? 'active' : ''} onClick={() => go('home')}>Platforms</button>}
         {showAdmin && <button className={route.name === 'admin' ? 'active' : ''} onClick={() => go('admin')}><ShieldCheck size={14} /> Admin</button>}
-        <button onClick={() => setAskAi(true)} title="Route a request to the right AI agent"><Sparkles size={14} /> Ask AI</button>
-        <a className="m3-topbar-link" href="/help/guide.html?v=20260710" target="_blank" rel="noreferrer" title="Open the interactive user guide in a new tab"><BookOpen size={14} /> Guide</a>
+        {showAskAi && <button onClick={() => setAskAi(true)} title="Route a request to the right AI agent"><Sparkles size={14} /> Ask AI</button>}
+        {showGuide && <a className="m3-topbar-link" href="/help/guide.html?v=20260722" target="_blank" rel="noreferrer" title="Open the interactive user guide in a new tab"><BookOpen size={14} /> Guide</a>}
       </nav>
       <div className="m3-topbar-status">
         <span className="m3-chip"><Server size={13} />{config ? (config.llm.provider ? `${config.llm.provider} · ${config.llm.model}` : 'LLM not configured') : 'Checking model…'}</span>
@@ -110,15 +115,18 @@ export default function App() {
     {route.name === 'project'
       ? <>
         {configurationError && <div className="m3-content" style={{ padding: '16px 28px 0' }}><div className="m3-banner error">{configurationError}</div></div>}
-        <ProjectWorkspace key={route.id} projectId={route.id} config={config} notice={route.notice} requestedTab={workspaceTab} />
+        {showWorkspace
+          ? <ProjectWorkspace key={route.id} projectId={route.id} config={config} notice={route.notice} requestedTab={workspaceTab} />
+          : <div className="m3-content"><div className="m3-banner error">You don't have access to the project workspace.</div></div>}
       </>
       : <div className="m3-content" style={{ flex: 1 }}>
         {configurationError && <div className="m3-banner error">{configurationError}</div>}
-        {route.name === 'home' && <ProjectsHome
+        {route.name === 'home' && (showPlatforms ? <ProjectsHome
           canCreate={can('platform.create')}
-          onOpen={(id) => { setWorkspaceTab(null); setRoute({ name: 'project', id }) }}
-          onNew={() => setRoute({ name: 'wizard' })} />}
-        {route.name === 'wizard' && <NewProjectWizard config={config}
+          onOpen={(id) => { if (!showWorkspace) { toast.info('You do not have access to project workspaces.'); return }; setWorkspaceTab(null); setRoute({ name: 'project', id }) }}
+          onNew={() => setRoute({ name: 'wizard' })} />
+          : <div className="m3-banner error">You don't have access to the Platforms page.</div>)}
+        {route.name === 'wizard' && showPlatforms && <NewProjectWizard config={config}
           onDone={(id, notice) => { setWorkspaceTab(null); setRoute({ name: 'project', id, notice }) }}
           onCancel={() => setRoute({ name: 'home' })} />}
         {route.name === 'quick' && <>

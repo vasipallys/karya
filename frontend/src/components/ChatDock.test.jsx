@@ -131,6 +131,50 @@ describe('ChatDock', () => {
     expect(onOpenElement).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1', level: 'L2' }))
   })
 
+  it('renders item-by-item readiness for a level status question', async () => {
+    api.chatStream.mockImplementation(streamScript([
+      ['result', {
+        reply: 'L1 readiness by item averages 21%.', action: 'readiness', mutation: null,
+        data: { level: 'L1', items: [
+          { id: 'l1a', level: 'L1', name: 'Smart Banking', status: 'active', score: 15, status_label: 'Getting started' },
+          { id: 'l1b', level: 'L1', name: 'Core CRM', status: 'active', score: 27, status_label: 'In progress' },
+        ] },
+      }],
+    ]))
+    const onOpenElement = vi.fn()
+    renderDock({ onOpenElement })
+    openDock()
+    type('what is status of each L1 item')
+
+    const coreCrm = await screen.findByRole('button', { name: 'Core CRM' })
+    expect(screen.getByText(/15%.*Getting started/)).toBeInTheDocument()
+    expect(screen.getByText(/27%.*In progress/)).toBeInTheDocument()
+    fireEvent.click(coreCrm)
+    expect(onOpenElement).toHaveBeenCalledWith(expect.objectContaining({ id: 'l1b', score: 27 }))
+  })
+
+  it('renders a grounded element description with a workspace link', async () => {
+    api.chatStream.mockImplementation(streamScript([
+      ['result', {
+        reply: '**client-service** is an **L2 container** under **Smart Banking**.\n\nManages client profiles.',
+        action: 'describe', mutation: null,
+        data: {
+          element: { id: 'l2-client', level: 'L2', name: 'client-service', status: 'active' },
+          readiness: { score: 35, status_label: 'In progress' },
+        },
+      }],
+    ]))
+    const onOpenElement = vi.fn()
+    renderDock({ onOpenElement })
+    openDock()
+    type('what is L2 client-service about')
+
+    await screen.findByText(/Manages client profiles/)
+    expect(screen.getByText(/35% ready/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /open workspace/i }))
+    expect(onOpenElement).toHaveBeenCalledWith(expect.objectContaining({ id: 'l2-client', level: 'L2' }))
+  })
+
   it('supports docked and maximized window modes', () => {
     renderDock()
     openDock()

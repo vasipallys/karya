@@ -10,7 +10,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.ai.masking import mask_pii
-from backend.ai.nl import classify_read, list_status_filter, match_relation, parse_create
+from backend.ai.nl import classify_read, is_write_intent, list_status_filter, match_relation, parse_create
 from backend.ai.schemas import ChatCommand, C4Scaffold, FieldSummary, L1BaselineDraft, L2Draft, L3Draft, L4Draft, NarrativeOutput, OrchestratorPlan, StaffingProposal, StoryDecomposition
 from backend.c4 import store as c4_store
 from backend.graph.nodes import _parse_structured_result
@@ -439,7 +439,8 @@ async def orchestrate(request_text: str) -> OrchestratorPlan:
 _CHAT_SYSTEM = (
     "You are the Karya assistant. Interpret the user's message into ONE structured command over "
     "the project's C4 model (levels L1 initiative, L2 container, L3 component/story, L4 task).\n"
-    "Actions: overview (project status/next step), list (elements at a level), readiness (of a named element "
+    "Actions: overview (project status/next step), list (elements at a level), describe (what a named element is "
+    "about, using its stored description and architecture context), readiness (of a named element "
     "or level), report (roll-up / what to do next), create_element (level+name, optional parent name), "
     "update_element (name + new_name/status/description), delete_element (name), "
     "create_relation (name=source element, target=target element, optional label) — connects two "
@@ -466,7 +467,9 @@ _CHAT_SYSTEM = (
     "an element or level is → readiness. Only use answer for genuinely open-ended questions, and then ground every "
     "claim (counts, points, status, next step) in the PROJECT SNAPSHOT and PLATFORM GUIDE — never fabricate numbers. "
     "When a message omits the level or element (e.g. a bare 'readiness' or 'list'), default it from CURRENT SCREEN "
-    "if present — the open element for readiness, the open level for list."
+    "if present — the open element for readiness, the open level for list. "
+    "The status field is always a string: use the explicitly named lifecycle status, or an empty string when the "
+    "user did not request a status filter. Never return a boolean status."
 )
 
 
@@ -562,7 +565,16 @@ async def interpret_chat(project_id: str, message: str, history: list[dict[str, 
         + f"USER MESSAGE:\n{mask_pii(message.strip())}\n\n"
         "Interpret into one command."
     )
-    if prefers_text_routing():
+    # Ground recognizable reads deterministically for every provider. The LLM is
+    # still used for writes and open-ended modes, but must not turn a scoped ask
+    # such as "status of each L1 item" into a whole-project overview.
+    read = (classify_read(message, [str(e["name"]) for e in elements], screen_level, screen_element)
+            if mode == "auto" and not is_write_intent(message) else None)
+    if read:
+        action, read_level, read_name = read
+        status = list_status_filter(message) if action == "list" else ""
+        command = ChatCommand(action=action, level=read_level, name=read_name, status=status)
+    elif prefers_text_routing():
         command = await _interpret_local_chat(message, mode, elements, human, screen_level, screen_element, history)
     else:
         command = await _invoke(ChatCommand, _CHAT_SYSTEM, human)

@@ -148,3 +148,20 @@ def configured_keys() -> set[str]:
 
 def is_configured(key: str) -> bool:
     return key in configured_keys()
+
+
+def runtime_config(key: str) -> dict[str, Any]:
+    """Return enabled connector settings, including secrets, to backend adapters.
+
+    This must never be exposed directly through an API response. It exists so
+    live adapters such as LDAP can use write-only credentials server-side.
+    """
+    if not is_configured(key):
+        raise IntegrationValidationError(
+            f"The '{key}' connector is not configured and enabled. Configure it in Admin → Integrations first."
+        )
+    values = _stored_values(key)
+    missing = [field for field in connectors.required_keys(key) if not str(values.get(field, "")).strip()]
+    if missing:
+        raise IntegrationValidationError(f"The '{key}' connector is missing required settings: {', '.join(missing)}")
+    return dict(values)

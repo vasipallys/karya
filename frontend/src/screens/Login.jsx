@@ -26,6 +26,7 @@ export default function Login() {
 
   const pick = (user) => signIn({
     staff_id: user.id, name: user.staff_name, role: user.role, staff_code: user.staff_code,
+    page_permissions: user.page_permissions,
   })
 
   const bootstrap = () => signIn({ staff_id: null, name: 'Administrator', role: 'admin', staff_code: null })

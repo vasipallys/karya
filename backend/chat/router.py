@@ -16,6 +16,7 @@ from backend.chat import service
 from backend.chat import store as chat_store
 from backend.chat.graph import get_chat_graph
 from backend.projects.store import NotFoundError
+from backend.llm.factory import LLMInvocationError
 from backend.llm.local import LocalModelInferenceError, LocalModelLoadingError
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["chat"])
@@ -166,6 +167,9 @@ async def chat_stream(project_id: str, payload: ChatRequest, request: Request) -
             yield sse("error", {"code": "model_loading", "message": str(exc), "retryable": True})
         except LocalModelInferenceError as exc:
             yield sse("error", {"code": "local_inference_error", "message": str(exc), "retryable": False})
+        except LLMInvocationError as exc:
+            yield sse("error", {"code": "llm_provider_error", "message": str(exc),
+                                "retryable": exc.retryable})
         except (service.ChatError, c4_store.C4ValidationError) as exc:
             yield sse("error", {"code": "chat_invalid", "message": str(exc), "retryable": False})
         except ValueError as exc:
