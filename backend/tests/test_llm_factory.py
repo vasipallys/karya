@@ -42,6 +42,7 @@ async def test_groq_json_mode_always_mentions_json(monkeypatch):
         result = await factory.get_structured_llm(ExampleOutput).ainvoke([HumanMessage(content="hello")])
         assert result["parsed"].value == "ok"
         assert any("json" in str(message.content).lower() for message in seen["messages"])
+        assert any('"value"' in str(message.content) for message in seen["messages"])
     finally:
         get_settings.cache_clear()
 

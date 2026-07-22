@@ -10,12 +10,13 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.ai.masking import mask_pii
-from backend.ai.nl import classify_read, is_write_intent, list_status_filter, match_relation, parse_create
+from backend.ai.nl import classify_read, ground_status_target, is_write_intent, list_status_filter, match_relation, parse_create
 from backend.ai.schemas import ChatCommand, C4Scaffold, FieldSummary, L1BaselineDraft, L2Draft, L3Draft, L4Draft, NarrativeOutput, OrchestratorPlan, StaffingProposal, StoryDecomposition
 from backend.c4 import store as c4_store
 from backend.graph.nodes import _parse_structured_result
 from backend.llm.factory import get_llm, get_structured_llm, prefers_text_routing
 from backend.planning import store as planning_store
+from backend.projects import store as projects_store
 from backend.resources import store as resources_store
 from backend.storage.db import connect
 
@@ -454,6 +455,9 @@ _CHAT_SYSTEM = (
     "`label` like routes/calls/publishes) — the relation is created with the element.\n"
     "Use CONVERSATION so far to resolve follow-ups: if you previously asked for a missing detail (e.g. a name), "
     "interpret a short answer as that detail of the pending command.\n"
+    "The current USER MESSAGE is authoritative. Use conversation history only for a genuinely referential or short "
+    "follow-up; never reuse an earlier answer when the current message names a different target. If the requested "
+    "target is absent from PROJECT ELEMENTS and supplied context, say that you do not know instead of guessing.\n"
     "Resolve names against the PROJECT ELEMENTS list. For create/update/delete set the exact element name(s). "
     "REQUEST MODE is authoritative when it is not auto: chat→answer, code→code, research→web_search, "
     "image→image, document→document. Do not reinterpret a forced mode as a workspace mutation. "
@@ -543,6 +547,7 @@ async def interpret_chat(project_id: str, message: str, history: list[dict[str, 
                          attachment_context: str = "", mode: str = "auto",
                          screen: dict[str, Any] | None = None) -> ChatCommand:
     elements = c4_store.list_graph(project_id)["elements"]
+    project_name = projects_store.get_project(project_id)["name"]
     listing = "\n".join(f"- {e['level']} · {e['name']} ({e['status']})" for e in elements[:100]) or "(no elements yet)"
     screen_level, screen_element, screen_label = _resolve_screen(screen, elements)
     screen_line = ""
@@ -568,9 +573,24 @@ async def interpret_chat(project_id: str, message: str, history: list[dict[str, 
     # Ground recognizable reads deterministically for every provider. The LLM is
     # still used for writes and open-ended modes, but must not turn a scoped ask
     # such as "status of each L1 item" into a whole-project overview.
-    read = (classify_read(message, [str(e["name"]) for e in elements], screen_level, screen_element)
-            if mode == "auto" and not is_write_intent(message) else None)
-    if read:
+    names = [str(e["name"]) for e in elements]
+    status_scope = (ground_status_target(message, project_name, names)
+                    if mode == "auto" and not is_write_intent(message) else None)
+    read = (classify_read(message, names, screen_level, screen_element)
+            if mode == "auto" and not is_write_intent(message) and not status_scope else None)
+    if status_scope and status_scope["kind"] == "unknown":
+        suggestions = status_scope["suggestions"]
+        hint = f" Did you mean **{suggestions[0]}**?" if suggestions else ""
+        command = ChatCommand(
+            action="answer",
+            reply=(f"I don't know the status of **{status_scope['target']}** because I couldn't find that "
+                   f"platform or C4 element in the current workspace **{project_name}**.{hint}"),
+        )
+    elif status_scope and status_scope["kind"] == "project":
+        command = ChatCommand(action="overview")
+    elif status_scope and status_scope["kind"] == "element":
+        command = ChatCommand(action="readiness", name=str(status_scope["name"]))
+    elif read:
         action, read_level, read_name = read
         status = list_status_filter(message) if action == "list" else ""
         command = ChatCommand(action=action, level=read_level, name=read_name, status=status)

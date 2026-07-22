@@ -71,8 +71,8 @@ class ScaffoldRelation(BaseModel):
 
 
 class C4Scaffold(BaseModel):
-    summary: str = Field(default="", max_length=1200)
-    elements: list[ScaffoldElement] = Field(default_factory=list, max_length=40)
+    summary: str = Field(min_length=1, max_length=1200)
+    elements: list[ScaffoldElement] = Field(min_length=1, max_length=40)
     relations: list[ScaffoldRelation] = Field(default_factory=list, max_length=60)
 
 

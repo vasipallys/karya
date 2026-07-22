@@ -37,7 +37,7 @@ export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken 
   const [error, setError] = useState(null)
   const [nodes, setNodes] = useState([])
   const [estimating, setEstimating] = useState(null)
-  const [scaffold, setScaffold] = useState(null) // { description, loading, result }
+  const [scaffold, setScaffold] = useState(null) // { description, loading, result, error }
   const resultsCache = useRef(new Map())
 
   const refresh = useCallback(() => api.c4Graph(projectId).then(setGraph).catch(setError), [projectId])
@@ -46,19 +46,27 @@ export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken 
   useEffect(() => { refresh() }, [refresh, reloadToken])
 
   const runScaffold = async () => {
-    if (!scaffold.description.trim()) return
-    setScaffold({ ...scaffold, loading: true })
+    const description = scaffold?.description.trim()
+    if (!description) return
+    setScaffold((current) => ({ ...current, loading: true, error: null }))
     try {
-      const result = await api.aiScaffold(projectId, scaffold.description)
-      setScaffold((current) => ({ ...current, loading: false, result }))
-    } catch (err) { setError(err); setScaffold((current) => ({ ...current, loading: false })) }
+      const result = await api.aiScaffold(projectId, description)
+      if (!result?.elements?.length) throw new Error('The AI returned an empty scaffold. Please try again.')
+      setScaffold((current) => current && ({ ...current, loading: false, result, error: null }))
+    } catch (err) {
+      setScaffold((current) => current && ({
+        ...current, loading: false, error: String(err.message || err),
+      }))
+    }
   }
 
   const applyScaffold = async () => {
     try {
       await api.applyScaffold(projectId, scaffold.result)
       setScaffold(null); await refresh()
-    } catch (err) { setError(err) }
+    } catch (err) {
+      setScaffold((current) => current && ({ ...current, error: String(err.message || err) }))
+    }
   }
 
   const parentId = drill.length ? drill[drill.length - 1].id : null
@@ -120,7 +128,7 @@ export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken 
   }, [projectId, refresh])
 
   const drillInto = (_, node) => {
-    if (node.data.element.level !== 'L4') { setDrill([...drill, node.data.element]); setSelectedId(null); setNodes([]) }
+    if (node.data.element.level !== 'L4') { setDrill([...drill, node.data.element]); setSelectedId(null) }
   }
 
   const addLevel = NEXT_LEVEL[drill.length ? drill[drill.length - 1].level : 'root']
@@ -141,16 +149,16 @@ export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken 
     {error && <div className="m3-banner error">{String(error.message || error)} <button className="m3-btn text small" onClick={() => setError(null)}>Dismiss</button></div>}
     <div className="m3-canvas-toolbar">
       <nav className="m3-breadcrumb" aria-label="C4 drill path">
-        <button onClick={() => { setDrill([]); setSelectedId(null); setNodes([]) }}>System landscape</button>
+        <button onClick={() => { setDrill([]); setSelectedId(null) }}>System landscape</button>
         {drill.map((element, index) => <span key={element.id} style={{ display: 'inline-flex', alignItems: 'center' }}>
           <ChevronRight size={15} />
           {index === drill.length - 1
             ? <span className="current">{element.name}</span>
-            : <button onClick={() => { setDrill(drill.slice(0, index + 1)); setSelectedId(null); setNodes([]) }}>{element.name}</button>}
+            : <button onClick={() => { setDrill(drill.slice(0, index + 1)); setSelectedId(null) }}>{element.name}</button>}
         </span>)}
       </nav>
       <span style={{ flex: 1 }} />
-      {drill.length === 0 && <button className="m3-btn text small" onClick={() => setScaffold({ description: '', loading: false, result: null })}><Sparkles size={15} /> AI scaffold</button>}
+      {drill.length === 0 && <button className="m3-btn text small" onClick={() => setScaffold({ description: '', loading: false, result: null, error: null })}><Sparkles size={15} /> AI scaffold</button>}
       {addLevel && <button className="m3-btn tonal small" onClick={() => setAdding(true)}><Plus size={15} /> Add {KIND_LABEL[addLevel]} ({addLevel})</button>}
       <button className="m3-btn text small" onClick={refresh} aria-label="Refresh"><RefreshCw size={15} /></button>
     </div>
@@ -159,10 +167,11 @@ export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken 
       <section className="m3-dialog wide" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="AI scaffold">
         <header className="l1-dialog-header"><h2><Sparkles size={18} /> AI scaffold a C4 model</h2><button className="m3-icon-btn" onClick={() => setScaffold(null)} aria-label="Close"><X size={19} /></button></header>
         <div>
+          {scaffold.error && <div className="m3-banner error" role="alert">{scaffold.error}</div>}
           {!scaffold.result && <>
             <label className="m3-field"><span>Describe the system</span>
               <textarea autoFocus rows={5} value={scaffold.description} placeholder="e.g. A retail banking platform with a customer web app, an accounts service, a payments service, and a ledger database…"
-                onChange={(event) => setScaffold({ ...scaffold, description: event.target.value })} /></label>
+                onChange={(event) => setScaffold({ ...scaffold, description: event.target.value, error: null })} /></label>
             <p className="ai-hint">The agent proposes an L1 system with L2 containers, L3 components, and their relations. Nothing is created until you apply — everything lands as <strong>proposed</strong> so you can review it.</p>
           </>}
           {scaffold.result && <div className="ai-scaffold-preview">

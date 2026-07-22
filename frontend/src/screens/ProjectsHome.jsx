@@ -129,7 +129,10 @@ export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
           <h2>Start your first platform</h2>
           <p>Create a platform, name its leads, and model your system as C4 to estimate from the architecture.</p>
           <div className="proj-empty-actions">
-            {canCreate && <button className="m3-btn filled" onClick={onNew}><Plus size={16} /> New platform</button>}
+            {canCreate && <>
+              <button className="m3-btn filled" onClick={() => onNew('blank')}><Plus size={16} /> New platform</button>
+              <button className="m3-btn tonal" onClick={() => onNew('ai')}><Sparkles size={16} /> New platform with AI</button>
+            </>}
           </div>
         </div>
       )}
@@ -140,16 +143,23 @@ export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
             <ProjectCard key={project.id} project={project} onOpen={onOpen} onDelete={remove} />
           ))}
           {projects && canCreate && (
-            <button className="proj-add-card" onClick={onNew}>
+            <button className="proj-add-card" onClick={() => onNew('blank')}>
               <span className="proj-add-icon"><Plus size={22} /></span>
               <strong>New platform</strong>
               <span>Name its leads &amp; link a repo to a fresh C4 model</span>
             </button>
           )}
+          {projects && canCreate && (
+            <button className="proj-add-card" onClick={() => onNew('ai')}>
+              <span className="proj-add-icon"><Sparkles size={22} /></span>
+              <strong>New platform with AI</strong>
+              <span>Describe the platform and generate its initial C4 model</span>
+            </button>
+          )}
         </div>
       )}
 
-      {canCreate && <button className="m3-fab" onClick={onNew}><Plus size={20} /> New platform</button>}
+      {canCreate && <button className="m3-fab" onClick={() => onNew('blank')}><Plus size={20} /> New platform</button>}
     </div>
   )
 }

@@ -124,9 +124,9 @@ export default function App() {
         {route.name === 'home' && (showPlatforms ? <ProjectsHome
           canCreate={can('platform.create')}
           onOpen={(id) => { if (!showWorkspace) { toast.info('You do not have access to project workspaces.'); return }; setWorkspaceTab(null); setRoute({ name: 'project', id }) }}
-          onNew={() => setRoute({ name: 'wizard' })} />
+          onNew={(seed = 'blank') => setRoute({ name: 'wizard', seed })} />
           : <div className="m3-banner error">You don't have access to the Platforms page.</div>)}
-        {route.name === 'wizard' && showPlatforms && <NewProjectWizard config={config}
+        {route.name === 'wizard' && showPlatforms && <NewProjectWizard config={config} initialSeed={route.seed}
           onDone={(id, notice) => { setWorkspaceTab(null); setRoute({ name: 'project', id, notice }) }}
           onCancel={() => setRoute({ name: 'home' })} />}
         {route.name === 'quick' && <>

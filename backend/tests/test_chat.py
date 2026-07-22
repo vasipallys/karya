@@ -83,6 +83,52 @@ def test_complete_project_status_reads_overview_not_readiness():
         assert res["mutation"] is None and "%" in res["reply"]
 
 
+def test_named_status_questions_are_grounded_to_the_current_turn():
+    """An unknown name must never fall back to the open project's cached-looking overview."""
+    pid, _, _ = _scope()
+    with TestClient(app) as client:
+        exact = _chat(client, pid, "what is the status of Digital banking").json()
+        assert exact["action"] == "overview"
+        assert exact["reply"].startswith("Digital banking is")
+
+        first = client.post(
+            f"/projects/{pid}/chat",
+            json={"message": "what is the status of Digital banking"},
+            headers=ADMIN,
+        ).json()
+        unknown = client.post(
+            f"/projects/{pid}/chat",
+            json={
+                "message": "what is the status of no banking",
+                "conversation_id": first["conversation_id"],
+            },
+            headers=ADMIN,
+        ).json()
+        assert unknown["action"] == "answer"
+        assert unknown["reply"].startswith("I don't know the status of **no banking**")
+        assert "Digital banking is" not in unknown["reply"]
+        assert "Did you mean" not in unknown["reply"]
+
+        typo = _chat(client, pid, "what is the status of Digitol banking").json()
+        assert typo["action"] == "answer"
+        assert "Did you mean **Digital banking**?" in typo["reply"]
+
+
+def test_unknown_status_stream_uses_lookup_evidence_not_project_rollup():
+    pid, _, _ = _scope()
+    with TestClient(app) as client:
+        response = client.post(
+            f"/projects/{pid}/chat/stream",
+            json={"message": "what is the status of no banking"},
+            headers=ADMIN,
+        )
+        assert response.status_code == 200
+        assert "I don't know the status of **no banking**" in response.text
+        assert '"tool": "entity_lookup"' in response.text
+        assert '"tool": "workflow_guide"' not in response.text
+        assert '"tool": "rollup"' not in response.text
+
+
 def test_pending_items_lists_proposed_from_db():
     """“give me pending items in L1” lists proposed L1 elements from the DB —
     it must not fall through to a free-form (hallucinated) answer."""

@@ -64,9 +64,14 @@ def _hosted_structured_runnable(model: BaseChatModel, schema: type[SchemaT], *, 
 
     async def invoke(messages, config=None):
         # Groq rejects response_format=json_object unless at least one message
-        # explicitly contains the word "JSON". Put that provider requirement at
-        # the factory boundary so every structured agent benefits from it.
-        prompted = ([SystemMessage(content="Return one valid JSON object matching the requested schema.")]
+        # explicitly contains the word "JSON". JSON mode also does not enforce
+        # the Pydantic schema by itself, so include the actual schema rather than
+        # relying on the model to infer the requested property names.
+        schema_json = json.dumps(schema.model_json_schema(), separators=(",", ":"))
+        prompted = ([SystemMessage(content=(
+            "Return one valid JSON object matching this JSON Schema exactly. "
+            f"Use the property names as written and do not invent a different envelope.\n{schema_json}"
+        ))]
                     + list(messages)) if json_mode else messages
         try:
             return await structured.ainvoke(prompted, config=config)

@@ -22,10 +22,11 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from backend.ai import agents
-from backend.ai.nl import classify_read, is_write_intent
+from backend.ai.nl import classify_read, ground_status_target, is_write_intent
 from backend.ai.schemas import ChatCommand
 from backend.c4 import service as c4_service
 from backend.c4 import store as c4_store
+from backend.projects import store as projects_store
 from backend.workflow import service as workflow_service
 
 
@@ -52,8 +53,23 @@ async def planner(state: ChatAgentState) -> dict[str, Any]:
 
 def retrieval(state: ChatAgentState) -> dict[str, Any]:
     elements = c4_store.list_graph(state["project_id"])["elements"]
-    read = (classify_read(state["message"], [str(element["name"]) for element in elements])
-            if not is_write_intent(state["message"]) else None)
+    names = [str(element["name"]) for element in elements]
+    project_name = projects_store.get_project(state["project_id"])["name"]
+    status_scope = (ground_status_target(state["message"], project_name, names)
+                    if not is_write_intent(state["message"]) else None)
+    if status_scope and status_scope["kind"] == "unknown":
+        return {"facts": {
+            "element_count": 0, "by_level": {}, "proposed": 0, "names": [],
+            "summary": f"No platform or C4 element named {status_scope['target']} in {project_name}",
+            "requested_target": status_scope["target"], "matched": False,
+        }}
+    if status_scope and status_scope["kind"] == "element":
+        read = ("readiness", "", str(status_scope["name"]))
+    elif status_scope and status_scope["kind"] == "project":
+        read = ("overview", "", "")
+    else:
+        read = (classify_read(state["message"], names)
+                if not is_write_intent(state["message"]) else None)
     action, _, read_name = read or ("", "", "")
     if action == "describe" and read_name:
         target = next((element for element in elements if element["name"] == read_name), None)
@@ -100,8 +116,21 @@ def tools(state: ChatAgentState) -> dict[str, Any]:
     calls: list[dict[str, Any]] = []
 
     elements = c4_store.list_graph(project_id)["elements"]
-    read = (classify_read(state["message"], [str(element["name"]) for element in elements])
-            if not is_write_intent(state["message"]) else None)
+    names = [str(element["name"]) for element in elements]
+    project_name = projects_store.get_project(project_id)["name"]
+    status_scope = (ground_status_target(state["message"], project_name, names)
+                    if not is_write_intent(state["message"]) else None)
+    if status_scope and status_scope["kind"] == "unknown":
+        calls.append({"tool": "entity_lookup",
+                      "summary": f"No platform or C4 element named {status_scope['target']} in {project_name}"})
+        return {"tool_runs": {"calls": calls, "summary": "Requested target was not found"}}
+    if status_scope and status_scope["kind"] == "element":
+        read = ("readiness", "", str(status_scope["name"]))
+    elif status_scope and status_scope["kind"] == "project":
+        read = ("overview", "", "")
+    else:
+        read = (classify_read(state["message"], names)
+                if not is_write_intent(state["message"]) else None)
     action, level, read_name = read or ("", "", "")
     if action == "describe" and read_name:
         described = next((element for element in elements if element["name"] == read_name), None)

@@ -54,4 +54,14 @@ describe('ProjectsHome', () => {
     await waitFor(() => expect(screen.getByText('Start your first platform')).toBeInTheDocument())
     expect(api.listProjects).toHaveBeenCalledTimes(2)
   })
+
+  it('offers AI scaffolding as a separate new-platform path', async () => {
+    api.listProjects.mockResolvedValue([])
+    const onNew = vi.fn()
+    render(<ProjectsHome onOpen={vi.fn()} onNew={onNew} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'New platform with AI' }))
+
+    expect(onNew).toHaveBeenCalledWith('ai')
+  })
 })

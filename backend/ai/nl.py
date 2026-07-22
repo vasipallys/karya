@@ -10,6 +10,7 @@ the logic lives here once and is imported by each.
 
 from __future__ import annotations
 
+import difflib
 import re
 
 _REL_TRIGGER = re.compile(r"\b(route|routes|connect|connects|link|links|wire|wires|connection)\b", re.IGNORECASE)
@@ -34,6 +35,10 @@ _DESCRIBE = re.compile(
 _OVERVIEW = re.compile(r"overview|project status|\bstatus\b|progress|where am i|how are we|health|state of|summar(?:y|ise|ize)", re.IGNORECASE)
 _WRITE_INTENT = re.compile(
     r"\b(create|add|rename|delete|remove|set|update|change|connect|route|link|wire)\b",
+    re.IGNORECASE,
+)
+_STATUS_TARGET = re.compile(
+    r"\b(?:status|progress|state|health)\s+(?:of|for)\s+(.+?)(?:[?.!]+)?$",
     re.IGNORECASE,
 )
 
@@ -65,6 +70,51 @@ def resolve_element_name(fragment: str, names: list[str]) -> str:
         if squashed in frag or (len(frag) >= 4 and frag in squashed):
             return name
     return ""
+
+
+def ground_status_target(text: str, project_name: str, names: list[str]) -> dict[str, object] | None:
+    """Ground an explicitly named status target against the current workspace.
+
+    A project-scoped chat must not answer ``status of <unknown name>`` with the
+    current project's overview. Returning ``kind=unknown`` lets every chat branch
+    stop safely and say that the requested target is not present. Generic scopes
+    and level-wide questions are left to ``classify_read``.
+    """
+    match = _STATUS_TARGET.search(text.strip())
+    if not match:
+        return None
+    target = re.sub(r"^(?:the|a|an)\s+", "", match.group(1).strip(), flags=re.IGNORECASE)
+    target = target.strip(" \t\r\n\"'â€œâ€â€˜â€™?.!")
+    low = target.lower()
+    if not target or _LEVEL_RE.search(target) or re.search(r"\b(each|all|items?|elements?)\b", low):
+        return None
+
+    generic = {
+        "project", "platform", "workspace", "current project", "current platform",
+        "this project", "this platform", "our project", "our platform", "it",
+    }
+    if low in generic:
+        return {"kind": "project", "target": target, "name": project_name, "suggestions": []}
+
+    def scope_key(value: str) -> str:
+        key = _squash(value)
+        for suffix in ("platform", "project", "workspace"):
+            if key.endswith(suffix) and len(key) > len(suffix):
+                key = key[:-len(suffix)]
+                break
+        return key
+
+    if scope_key(target) == scope_key(project_name):
+        return {"kind": "project", "target": target, "name": project_name, "suggestions": []}
+    element_name = resolve_element_name(target, names)
+    if element_name:
+        return {"kind": "element", "target": target, "name": element_name, "suggestions": []}
+
+    candidates = list(dict.fromkeys([project_name, *names]))
+    # Suggest only close spelling mistakes; sharing a generic word such as
+    # "banking" is not enough to imply that the user meant this platform.
+    suggestions = difflib.get_close_matches(target, candidates, n=3, cutoff=0.78)
+    return {"kind": "unknown", "target": target, "name": "", "suggestions": suggestions}
 
 
 def match_relation(text: str, names: list[str]) -> tuple[str, str, str] | None:

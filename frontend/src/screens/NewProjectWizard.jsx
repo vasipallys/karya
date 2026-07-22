@@ -5,7 +5,7 @@ import LeadsEditor from '../components/LeadsEditor'
 
 const STEPS = ['Basics', 'Code repo', 'Jira', 'Seed C4']
 
-export default function NewProjectWizard({ config, onDone, onCancel }) {
+export default function NewProjectWizard({ config, onDone, onCancel, initialSeed = 'blank' }) {
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -13,7 +13,7 @@ export default function NewProjectWizard({ config, onDone, onCancel }) {
     name: '', description: '', leads: [], sensitivity: 'standard',
     repoMode: 'existing', repoUrl: '', repoPath: '',
     jiraInstance: '', jiraKey: '',
-    seed: 'blank',
+    seed: initialSeed === 'ai' ? 'ai' : 'blank', aiPrompt: '',
   })
   const set = (key) => (event) => setForm({ ...form, [key]: event.target.value })
   const pick = (key, value) => () => setForm({ ...form, [key]: value })
@@ -39,6 +39,14 @@ export default function NewProjectWizard({ config, onDone, onCancel }) {
       } else if (form.seed === 'jira' && form.jiraInstance && form.jiraKey.trim()) {
         const imported = await api.importJira(project.id)
         notice = `Imported ${imported.created} Jira issues as proposed stories.`
+      } else if (form.seed === 'ai') {
+        try {
+          const scaffold = await api.aiScaffold(project.id, form.aiPrompt.trim())
+          const applied = await api.applyScaffold(project.id, scaffold)
+          notice = `AI scaffold added ${applied.created_elements} elements and ${applied.created_relations} relations as proposed.`
+        } catch (err) {
+          notice = `Platform created, but the AI scaffold failed: ${String(err.message || err)} You can retry from the C4 canvas.`
+        }
       }
       onDone(project.id, notice)
     } catch (err) { setError(err); setBusy(false) }
@@ -93,9 +101,16 @@ export default function NewProjectWizard({ config, onDone, onCancel }) {
       {step === 3 && <>
         <div className="m3-radio-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <label className={form.seed === 'blank' ? 'selected' : ''}><input type="radio" checked={form.seed === 'blank'} onChange={pick('seed', 'blank')} /> Blank canvas — I will draw the C4 model myself</label>
+          <label className={form.seed === 'ai' ? 'selected' : ''}><input type="radio" checked={form.seed === 'ai'} onChange={pick('seed', 'ai')} /> AI scaffold — generate an L1/L2/L3 C4 model from a prompt</label>
           <label className={form.seed === 'scan' ? 'selected' : ''}><input type="radio" checked={form.seed === 'scan'} onChange={pick('seed', 'scan')} disabled={!form.repoPath.trim()} /> Scan the local repo — propose containers and components from the code {!form.repoPath.trim() && '(needs a local path in step 2)'}</label>
           <label className={form.seed === 'jira' ? 'selected' : ''}><input type="radio" checked={form.seed === 'jira'} onChange={pick('seed', 'jira')} disabled={!form.jiraInstance || !form.jiraKey.trim()} /> Import Jira issues as proposed stories {(!form.jiraInstance || !form.jiraKey.trim()) && '(needs a Jira link in step 3)'}</label>
         </div>
+        {form.seed === 'ai' && <>
+          <label className="m3-field"><span>Describe the platform for AI</span>
+            <textarea rows={7} value={form.aiPrompt} onChange={set('aiPrompt')}
+              placeholder="Describe the users, business capabilities, integrations, data flows, technology preferences, security needs, and operational constraints…" /></label>
+          <p className="ai-hint">AI will propose one L1 system, its L2 containers, L3 components, and their relations. All generated elements are marked proposed for review.</p>
+        </>}
       </>}
     </div>
     <div className="m3-wizard-actions">
@@ -103,7 +118,7 @@ export default function NewProjectWizard({ config, onDone, onCancel }) {
         <ArrowLeft size={16} /> {step === 0 ? 'Cancel' : 'Back'}</button>
       {step < STEPS.length - 1
         ? <button className="m3-btn filled" onClick={() => setStep(step + 1)} disabled={!canNext}>Next <ArrowRight size={16} /></button>
-        : <button className="m3-btn filled" onClick={finish} disabled={busy || !form.name.trim()}>{busy ? 'Creating…' : 'Create platform'}</button>}
+        : <button className="m3-btn filled" onClick={finish} disabled={busy || !form.name.trim() || (form.seed === 'ai' && !form.aiPrompt.trim())}>{busy ? (form.seed === 'ai' ? 'Creating & scaffolding…' : 'Creating…') : (form.seed === 'ai' ? 'Create & scaffold platform' : 'Create platform')}</button>}
     </div>
   </div>
 }
