@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from backend.ai import agents
-from backend.ai.schemas import L1BaselineDraft, L2Draft, L3Draft, L4Draft, ProposedStory, ScaffoldElement, ScaffoldRelation, StaffingAssignment
+from backend.ai.schemas import C4Scaffold, L1BaselineDraft, L2Draft, L3Draft, L4Draft, ProposedStory, StaffingAssignment
 from backend.api.streaming import require_llm_config
 from backend.c4 import store as c4_store
 from backend.l2arch import store as l2_store
@@ -121,11 +121,6 @@ class SummarizeRequest(BaseModel):
     field: str = Field(default="default", max_length=40)
 
 
-class ApplyScaffold(BaseModel):
-    elements: list[ScaffoldElement] = Field(default_factory=list, max_length=60)
-    relations: list[ScaffoldRelation] = Field(default_factory=list, max_length=80)
-
-
 # ---- auto-staffing ------------------------------------------------------
 
 @router.post("/projects/{project_id}/l1/{l1_element_id}/ai/staffing")
@@ -176,7 +171,7 @@ async def scaffold(project_id: str, payload: ScaffoldRequest, request: Request) 
 
 
 @router.post("/projects/{project_id}/c4/ai/scaffold/apply")
-async def apply_scaffold(project_id: str, payload: ApplyScaffold) -> dict[str, Any]:
+async def apply_scaffold(project_id: str, payload: C4Scaffold) -> dict[str, Any]:
     return _guard(lambda: agents.apply_scaffold(project_id, payload.model_dump()))
 
 

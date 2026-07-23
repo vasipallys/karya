@@ -7,7 +7,7 @@ import json
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any
 
 import pandas as pd
 

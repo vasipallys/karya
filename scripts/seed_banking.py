@@ -103,33 +103,33 @@ def main() -> None:
     doc_capture = story(onboarding_web, "Identity document capture",
                         "As an applicant I can photograph my ID and see instant quality feedback so my application is not rejected later.",
                         "Camera/file capture with client-side blur/glare checks; uploads via pre-signed URL; retries on flaky mobile networks; accessibility for assistive tech.", 40, 40)
-    ekyc_screen = story(onboarding_web, "eKYC status and retry screen",
-                        "As an applicant I can see my verification status and complete missing steps without restarting the journey.",
-                        "Polls verification status; resumable journey state; distinct flows for refer/reject outcomes with human-readable reasons.", 40, 190)
-    product_wizard = story(onboarding_web, "Product selection wizard",
-                           "As an applicant I can compare current accounts and select one with clear fee disclosure (regulatory requirement).",
-                           "Config-driven product catalogue; fee disclosure PDFs generated server-side; analytics events for funnel drop-off.", 40, 340)
+    story(onboarding_web, "eKYC status and retry screen",
+          "As an applicant I can see my verification status and complete missing steps without restarting the journey.",
+          "Polls verification status; resumable journey state; distinct flows for refer/reject outcomes with human-readable reasons.", 40, 190)
+    story(onboarding_web, "Product selection wizard",
+          "As an applicant I can compare current accounts and select one with clear fee disclosure (regulatory requirement).",
+          "Config-driven product catalogue; fee disclosure PDFs generated server-side; analytics events for funnel drop-off.", 40, 340)
 
     consent_api = story(customer_svc, "Consent management API (PSD2)",
                         "As a TPP or internal channel I can create, read, and revoke customer consents with a full audit trail.",
                         "Consent state machine with expiry; every transition audited to the event bus; GDPR erasure interacts with retention rules.", 40, 40)
-    profile_api = story(customer_svc, "Customer profile API",
-                        "As a channel I can read and update contact details with strong validation and change notifications.",
-                        "Optimistic locking; address validation service integration; PII field-level encryption; emits profile-changed events.", 40, 190)
+    story(customer_svc, "Customer profile API",
+          "As a channel I can read and update contact details with strong validation and change notifications.",
+          "Optimistic locking; address validation service integration; PII field-level encryption; emits profile-changed events.", 40, 190)
 
     balances_api = story(account_svc, "Balance and statement API",
                          "As a customer I can see near-real-time balances and download statements for any period.",
                          "Core banking read adapter with cache and staleness budget of 60s; statement PDFs rendered async; pagination over 7 years of history.", 40, 40)
-    accrual_job = story(account_svc, "Interest accrual reconciliation job",
-                        "As finance I need daily verification that platform balances match core banking accruals.",
-                        "Nightly batch inside core's window; discrepancy report with tolerance thresholds; alerting into ops channel.", 40, 190)
+    story(account_svc, "Interest accrual reconciliation job",
+          "As finance I need daily verification that platform balances match core banking accruals.",
+          "Nightly batch inside core's window; discrepancy report with tolerance thresholds; alerting into ops channel.", 40, 190)
 
     transfer_api = story(payment_svc, "Domestic transfer API",
                          "As a customer I can send a SEPA transfer and receive a payment id and status immediately.",
                          "Idempotency keys; synchronous sanctions screening budget 300ms; outbox pattern to the event bus; SCA challenge integration via gateway.", 40, 40)
-    standing_orders = story(payment_svc, "Standing order scheduler",
-                            "As a customer I can create, amend, and cancel standing orders that execute reliably on schedule.",
-                            "Cron-like scheduler with calendar rules (TARGET2 holidays); retries with dead-letter handling; amendments versioned for audit.", 40, 190)
+    story(payment_svc, "Standing order scheduler",
+          "As a customer I can create, amend, and cancel standing orders that execute reliably on schedule.",
+          "Cron-like scheduler with calendar rules (TARGET2 holidays); retries with dead-letter handling; amendments versioned for audit.", 40, 190)
     sanctions_adapter = story(payment_svc, "Sanctions screening adapter",
                               "As compliance I need every instruction screened against the sanctions list before routing, deny-by-default on timeout.",
                               "Vendor API with 300ms budget and circuit breaker; deny-by-default; full audit event per decision; list-update reconciliation.", 40, 340)
@@ -137,16 +137,16 @@ def main() -> None:
                              "As a partner system I can subscribe to payment status changes with guaranteed at-least-once delivery.",
                              "Webhook registry with HMAC signing; retry/backoff with DLQ; replay endpoint for consumers that lost events.", 40, 490)
 
-    velocity_rules = story(fraud, "Velocity rules evaluator",
-                           "As a fraud analyst I need configurable velocity rules (amount/count per window) evaluated in-stream under 50ms.",
-                           "Kafka Streams state stores; rule config hot-reload; shadow-mode evaluation before enforcement.", 40, 40)
-    fraud_cases = story(fraud, "Fraud case creation adapter",
-                        "As a fraud analyst I get a case with full transaction context whenever a rule fires.",
-                        "Case-management REST integration; dedup within correlation window; PII minimization in case payloads.", 40, 190)
+    story(fraud, "Velocity rules evaluator",
+          "As a fraud analyst I need configurable velocity rules (amount/count per window) evaluated in-stream under 50ms.",
+          "Kafka Streams state stores; rule config hot-reload; shadow-mode evaluation before enforcement.", 40, 40)
+    story(fraud, "Fraud case creation adapter",
+          "As a fraud analyst I get a case with full transaction context whenever a rule fires.",
+          "Case-management REST integration; dedup within correlation window; PII minimization in case payloads.", 40, 190)
 
-    token_relay = story(gateway, "OAuth2 token relay and SCA step-up",
-                        "As a channel I get seamless token relay, with SCA step-up triggered for high-risk operations (PSD2 RTS).",
-                        "Token exchange; risk-based step-up policy config; session binding; audit headers propagated to all services.", 40, 40)
+    story(gateway, "OAuth2 token relay and SCA step-up",
+          "As a channel I get seamless token relay, with SCA step-up triggered for high-risk operations (PSD2 RTS).",
+          "Token exchange; risk-based step-up policy config; session binding; audit headers propagated to all services.", 40, 40)
 
     # A few stories arrive pre-linked to Jira issue keys (reference only).
     upsert_artifact(transfer_api["id"], "story", jira_issue_key="RB-201")

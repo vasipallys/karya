@@ -642,9 +642,6 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
         def _parse(msg):
             low = msg.lower()
             found = next((n for n in names if n.lower() in low), "")
-            level_match = re.search(r"\bl([1-4])\b", low)
-            level = f"L{level_match.group(1)}" if level_match else ""
-
             def _after(*words):
                 for w in words:
                     m = re.search(rf"\b{w}\s+(.+)", msg, re.IGNORECASE)

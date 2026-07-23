@@ -84,7 +84,7 @@ def ground_status_target(text: str, project_name: str, names: list[str]) -> dict
     if not match:
         return None
     target = re.sub(r"^(?:the|a|an)\s+", "", match.group(1).strip(), flags=re.IGNORECASE)
-    target = target.strip(" \t\r\n\"'â€œâ€â€˜â€™?.!")
+    target = target.strip(" \t\r\n\"'“”‘’?.!")
     low = target.lower()
     if not target or _LEVEL_RE.search(target) or re.search(r"\b(each|all|items?|elements?)\b", low):
         return None

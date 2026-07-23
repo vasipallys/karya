@@ -621,8 +621,6 @@ async def _interpret_local_chat(message: str, mode: str, elements: list[dict], c
     low = text.lower()
     names = sorted((str(item["name"]) for item in elements), key=len, reverse=True)
     found = next((name for name in names if name.lower() in low), "")
-    level_match = re.search(r"\bl([1-4])\b", low)
-    level = f"L{level_match.group(1)}" if level_match else ""
     forced = {"chat": "answer", "code": "code", "research": "web_search",
               "image": "image", "document": "document"}.get(mode)
     if forced == "web_search":

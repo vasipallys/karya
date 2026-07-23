@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---- Auto-staffing agent ------------------------------------------------
@@ -62,6 +62,11 @@ class ScaffoldElement(BaseModel):
     tech: str = Field(default="", max_length=200)
     parent_ref: str | None = Field(default=None, description="ref of the parent element, or null for L1")
 
+    @field_validator("ref", "parent_ref", mode="before")
+    @classmethod
+    def _strip_refs(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 
 class ScaffoldRelation(BaseModel):
     source_ref: str
@@ -69,11 +74,53 @@ class ScaffoldRelation(BaseModel):
     label: str = Field(default="", max_length=120)
     kind: str = Field(default="sync", max_length=40)
 
+    @field_validator("source_ref", "target_ref", mode="before")
+    @classmethod
+    def _strip_refs(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 
 class C4Scaffold(BaseModel):
     summary: str = Field(min_length=1, max_length=1200)
     elements: list[ScaffoldElement] = Field(min_length=1, max_length=40)
     relations: list[ScaffoldRelation] = Field(default_factory=list, max_length=60)
+
+    @model_validator(mode="after")
+    def _valid_tree_and_relations(self) -> "C4Scaffold":
+        refs = [element.ref for element in self.elements]
+        if any(not ref.strip() for ref in refs):
+            raise ValueError("Every scaffold element requires a non-empty ref")
+        if len(refs) != len(set(refs)):
+            raise ValueError("Scaffold element refs must be unique")
+
+        by_ref = {element.ref: element for element in self.elements}
+        roots = [element for element in self.elements if element.level == "L1"]
+        if len(roots) != 1:
+            raise ValueError("A scaffold requires exactly one L1 root")
+
+        expected_parent = {"L2": "L1", "L3": "L2"}
+        for element in self.elements:
+            if element.level == "L1":
+                if element.parent_ref is not None:
+                    raise ValueError("The L1 scaffold root cannot have a parent_ref")
+                continue
+            if not element.parent_ref:
+                raise ValueError(f"A scaffold {element.level} element requires parent_ref")
+            parent = by_ref.get(element.parent_ref)
+            if parent is None:
+                raise ValueError(
+                    f"Scaffold parent_ref '{element.parent_ref}' does not reference an element"
+                )
+            if parent.level != expected_parent[element.level]:
+                raise ValueError(
+                    f"A scaffold {element.level} element requires an "
+                    f"{expected_parent[element.level]} parent"
+                )
+
+        for relation in self.relations:
+            if relation.source_ref not in by_ref or relation.target_ref not in by_ref:
+                raise ValueError("Every scaffold relation endpoint must reference an element")
+        return self
 
 
 # ---- L1 architecture baseline generator ---------------------------------

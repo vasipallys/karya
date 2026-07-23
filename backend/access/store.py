@@ -48,12 +48,15 @@ def _bootstrap_admin(conn: Any) -> None:
     """
     has_admin = conn.execute(
         """SELECT 1 FROM app_access a JOIN resource_staff s ON s.id = a.staff_id
-           WHERE a.role = 'admin' AND a.enabled = 1 LIMIT 1"""
+           WHERE a.role = 'admin' AND a.enabled = 1 AND s.staff_status = 'Active'
+           LIMIT 1"""
     ).fetchone()
     if has_admin:
         return
     first = conn.execute(
-        "SELECT id FROM resource_staff ORDER BY created_at, staff_code LIMIT 1"
+        """SELECT id FROM resource_staff
+           WHERE staff_status = 'Active'
+           ORDER BY created_at, staff_code LIMIT 1"""
     ).fetchone()
     if first is None:
         return
@@ -118,9 +121,17 @@ def get_user(staff_id: str) -> dict[str, Any]:
 
 
 def effective_role(staff_id: str) -> str | None:
-    """Lean per-request role lookup for RBAC. Returns None if unknown or disabled."""
+    """Lean per-request role lookup for RBAC.
+
+    Inactive directory identities are denied even if an old browser session still
+    carries their staff id. This keeps middleware authorization aligned with the
+    active-only login identity list.
+    """
     with connect() as conn:
-        if conn.execute("SELECT 1 FROM resource_staff WHERE id = ?", (staff_id,)).fetchone() is None:
+        staff = conn.execute(
+            "SELECT staff_status FROM resource_staff WHERE id = ?", (staff_id,)
+        ).fetchone()
+        if staff is None or staff["staff_status"] != "Active":
             return None
         row = conn.execute("SELECT role, enabled FROM app_access WHERE staff_id = ?", (staff_id,)).fetchone()
         if row is None:

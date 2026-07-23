@@ -14,7 +14,6 @@ from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import httpx
 
 from backend.ai.schemas import ChatCommand
-from backend.c4 import service as c4_service
 from backend.c4 import store as c4_store
 from backend.c4.models import C4ElementCreate, C4ElementUpdate, C4RelationCreate
 from backend.l1arch import service as l1_service

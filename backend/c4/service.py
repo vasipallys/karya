@@ -180,12 +180,18 @@ def scan_project_repo(project_id: str, local_path: str | None) -> dict[str, Any]
 def import_jira_stories(project_id: str, stories: list[Story], container_name: str = "Imported from Jira") -> dict[str, Any]:
     """Create L3 story elements (under one L2 container) from fetched Jira issues."""
     system = _first_element_at_level(project_id, "L1")
-    container = store.find_child_by_name(project_id, system["id"] if system else None, container_name)
+    if system is None:
+        project = get_project(project_id)
+        system = store.create_element(project_id, C4ElementCreate(
+            level="L1", name=project["name"], kind="system", status="proposed",
+            description="Root system created for the Jira-imported C4 model.",
+        ))
+    container = store.find_child_by_name(project_id, system["id"], container_name)
     if container is None:
         container = store.create_element(project_id, C4ElementCreate(
             level="L2", name=container_name, kind="container", status="proposed",
             description="Holding container for issues imported from Jira; re-parent them onto real containers.",
-            parent_id=system["id"] if system else None,
+            parent_id=system["id"],
         ))
     created = 0
     for story in stories:

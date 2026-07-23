@@ -102,6 +102,28 @@ def test_level_rules_reject_wrong_parent():
         c4_store.create_element(pid, C4ElementCreate(level="L1", name="child", parent_id=l1))  # L1 under L1
 
 
+def test_level_rules_require_non_l1_parent_and_keep_l1_top_level():
+    pid = create_project(ProjectCreate(name="Parent rules"))["id"]
+    l1 = c4_store.create_element(pid, C4ElementCreate(level="L1", name="Root"))["id"]
+    l2 = c4_store.create_element(
+        pid, C4ElementCreate(level="L2", name="Container", parent_id=l1)
+    )["id"]
+    l3 = c4_store.create_element(
+        pid, C4ElementCreate(level="L3", name="Component", parent_id=l2)
+    )["id"]
+    l4 = c4_store.create_element(
+        pid, C4ElementCreate(level="L4", name="Task", parent_id=l3)
+    )["id"]
+
+    for level in ("L2", "L3", "L4"):
+        with pytest.raises(c4_store.C4ValidationError):
+            c4_store.create_element(pid, C4ElementCreate(level=level, name=f"Orphan {level}"))
+    with pytest.raises(c4_store.C4ValidationError):
+        c4_store.create_element(
+            pid, C4ElementCreate(level="L1", name="Invalid root", parent_id=l4)
+        )
+
+
 def test_parent_from_other_project_rejected():
     p1 = create_project(ProjectCreate(name="A"))["id"]
     p2 = create_project(ProjectCreate(name="B"))["id"]

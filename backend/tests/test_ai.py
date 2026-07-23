@@ -115,6 +115,32 @@ async def test_scaffold_and_apply_builds_model():
     assert any(e["parent_id"] == l1["id"] for e in graph["elements"] if e["level"] == "L2")
 
 
+def test_scaffold_schema_rejects_invalid_or_partial_hierarchies():
+    from pydantic import ValidationError
+
+    from backend.ai.schemas import C4Scaffold
+
+    with pytest.raises(ValidationError, match="exactly one L1 root"):
+        C4Scaffold.model_validate({
+            "summary": "No root",
+            "elements": [{"ref": "svc", "level": "L2", "name": "Service"}],
+        })
+    with pytest.raises(ValidationError, match="requires an L2 parent"):
+        C4Scaffold.model_validate({
+            "summary": "Wrong parent level",
+            "elements": [
+                {"ref": "root", "level": "L1", "name": "Root"},
+                {"ref": "component", "level": "L3", "name": "Component", "parent_ref": "root"},
+            ],
+        })
+    with pytest.raises(ValidationError, match="relation endpoint"):
+        C4Scaffold.model_validate({
+            "summary": "Bad relation",
+            "elements": [{"ref": "root", "level": "L1", "name": "Root"}],
+            "relations": [{"source_ref": "root", "target_ref": "missing"}],
+        })
+
+
 @pytest.mark.asyncio
 async def test_narrative_from_overview():
     _scope()

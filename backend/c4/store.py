@@ -22,7 +22,14 @@ class C4ValidationError(ValueError):
 
 def _check_parent(conn: Any, project_id: str, level: str, parent_id: str | None) -> None:
     if parent_id is None:
+        if level != "L1":
+            raise C4ValidationError(
+                f"A {level} element requires a parent one level up "
+                f"({LEVELS[LEVELS.index(level) - 1]})"
+            )
         return
+    if level == "L1":
+        raise C4ValidationError("An L1 element must be top-level and cannot have a parent")
     parent = conn.execute(
         "SELECT level, project_id FROM c4_elements WHERE id = ?", (parent_id,)
     ).fetchone()

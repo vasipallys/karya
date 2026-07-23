@@ -12,7 +12,7 @@ from backend.access import store as access
 from backend.access.models import AccessUpdate
 from backend.reporting import service
 from backend.resources import store as resources
-from backend.resources.models import StaffCreate
+from backend.resources.models import StaffCreate, StaffUpdate
 from backend.storage import db
 
 
@@ -64,6 +64,20 @@ def test_set_role_and_enabled():
     # Disabled users drop off the login list.
     login_ids = {u["id"] for u in access.list_users(enabled_only=True)}
     assert marcus["id"] not in login_ids
+
+
+def test_inactive_staff_cannot_authenticate_and_active_admin_is_rebootstrapped():
+    first = make_staff("Diana", "Prince")
+    second = make_staff("Marcus", "Chen")
+    access.list_users()  # bootstrap Diana
+
+    resources.update_staff(first["id"], StaffUpdate(staff_status="Inactive"))
+
+    assert access.effective_role(first["id"]) is None
+    users = access.list_users()
+    marcus = next(user for user in users if user["id"] == second["id"])
+    assert marcus["role"] == "admin"
+    assert {user["id"] for user in access.list_users(enabled_only=True)} == {second["id"]}
 
 
 def test_unknown_staff_rejected():

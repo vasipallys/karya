@@ -11,6 +11,7 @@ import pytest
 from backend.c4 import service, store
 from backend.c4.models import C4ElementCreate, C4ElementUpdate, C4RelationCreate
 from backend.c4.scan import scan_repo
+from backend.models import Story
 from backend.projects import store as projects
 from backend.projects.models import Lead, ProjectCreate, ProjectUpdate, RepoLinkCreate
 from backend.storage import db
@@ -156,3 +157,20 @@ def test_repo_scan_proposes_and_applies(work_dir):
     assert levels == ["L1", "L2", "L2", "L3", "L3"]
     # Second apply is idempotent.
     assert service.apply_scan(project["id"], proposal)["created"] == 0
+
+
+def test_jira_import_into_empty_project_creates_a_valid_parent_chain():
+    project = projects.create_project(ProjectCreate(name="Imported platform"))
+
+    outcome = service.import_jira_stories(
+        project["id"],
+        [Story(title="PAY-1 Process payment", source="jira", key="PAY-1")],
+    )
+
+    graph = store.list_graph(project["id"])
+    by_level = {level: [item for item in graph["elements"] if item["level"] == level]
+                for level in ("L1", "L2", "L3")}
+    assert outcome["created"] == 1
+    assert len(by_level["L1"]) == len(by_level["L2"]) == len(by_level["L3"]) == 1
+    assert by_level["L2"][0]["parent_id"] == by_level["L1"][0]["id"]
+    assert by_level["L3"][0]["parent_id"] == by_level["L2"][0]["id"]
