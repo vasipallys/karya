@@ -196,6 +196,8 @@ export const api = {
   setAccess: (staffId, payload) => json(`/access/users/${staffId}`, 'PATCH', payload),
   setPagePermissions: (staffId, permissions) => json(`/access/users/${staffId}/page-permissions`, 'PATCH', { permissions }),
   reportingOverview: () => jsonRequest('/reporting/overview'),
+  reportingResourceGraph: () => jsonRequest('/reporting/resource-graph'),
+  reportingResourceProfile: (staffId) => jsonRequest(`/reporting/resource/${staffId}`),
 
   // Agentic AI (Phase 3)
   reportingNarrative: () => json('/reporting/narrative', 'POST', {}),

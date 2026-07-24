@@ -1,7 +1,8 @@
-import { Activity, Boxes, FolderKanban, Layers, Sparkles, UserCheck, Users } from 'lucide-react'
+import { Activity, BarChart3, Boxes, FolderKanban, Layers, Network, Sparkles, UserCheck, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import { useToast } from '../../ui/Toast'
+import ResourceView from './ResourceView'
 
 function StatCard({ icon: Icon, label, value, hint, tone = 'default' }) {
   return (
@@ -33,7 +34,28 @@ function Breakdown({ title, rows }) {
   )
 }
 
+const TABS = [
+  { key: 'summary', label: 'Summary', icon: BarChart3 },
+  { key: 'resources', label: 'Resource view', icon: Network },
+]
+
 export default function Reporting() {
+  const [tab, setTab] = useState('summary')
+  return (
+    <div className="rv-tabs-host">
+      <div className="rv-tabs" role="tablist">
+        {TABS.map(({ key, label, icon: Icon }) => (
+          <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'summary' ? <Summary /> : <ResourceView />}
+    </div>
+  )
+}
+
+function Summary() {
   const toast = useToast()
   const [data, setData] = useState(null)
   const [narrative, setNarrative] = useState(null)
