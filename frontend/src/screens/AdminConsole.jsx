@@ -15,10 +15,11 @@ const SECTIONS = [
   { key: 'integrations', label: 'Integrations', icon: Plug, cap: 'admin.integrations', Component: Integrations },
 ]
 
-export default function AdminConsole() {
+export default function AdminConsole({ initialSection, initialTab }) {
   const { can } = useAuth()
   const available = useMemo(() => SECTIONS.filter((section) => can(section.cap)), [can])
-  const [active, setActive] = useState(available[0]?.key || 'reporting')
+  const validInitial = initialSection && available.some((section) => section.key === initialSection)
+  const [active, setActive] = useState(validInitial ? initialSection : available[0]?.key || 'reporting')
 
   if (available.length === 0) {
     return <div className="admin-shell"><div className="login-empty"><ShieldCheck size={28} /><p>You don't have access to the admin area.</p></div></div>
@@ -26,6 +27,8 @@ export default function AdminConsole() {
 
   const current = available.find((section) => section.key === active) || available[0]
   const Current = current.Component
+  // Forward the deep-link sub-tab only to the section it was aimed at.
+  const currentProps = validInitial && current.key === initialSection ? { initialTab } : {}
 
   return (
     <div className="admin-shell">
@@ -42,7 +45,7 @@ export default function AdminConsole() {
           )
         })}
       </nav>
-      <Current />
+      <Current {...currentProps} />
     </div>
   )
 }

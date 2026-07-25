@@ -10,6 +10,10 @@ vi.mock('../api/client', () => ({
   },
 }))
 
+// The personalised inbox has its own test; stub it here so these cases stay
+// focused on the platform cards and don't need auth wiring.
+vi.mock('./HomeInbox', () => ({ default: () => null }))
+
 describe('ProjectsHome', () => {
   beforeEach(() => {
     vi.clearAllMocks()

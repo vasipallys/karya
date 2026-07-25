@@ -39,8 +39,8 @@ const TABS = [
   { key: 'resources', label: 'Resource view', icon: Network },
 ]
 
-export default function Reporting() {
-  const [tab, setTab] = useState('summary')
+export default function Reporting({ initialTab }) {
+  const [tab, setTab] = useState(initialTab === 'resources' ? 'resources' : 'summary')
   return (
     <div className="rv-tabs-host">
       <div className="rv-tabs" role="tablist">

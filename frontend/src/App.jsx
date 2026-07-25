@@ -81,6 +81,19 @@ export default function App() {
 
   const go = (name) => setRoute({ name })
 
+  // Deep links from the home dashboard into the right module.
+  const handleHomeNavigate = (target) => {
+    if (!target) return
+    if (target.kind === 'project') {
+      if (!showWorkspace) { toast.info('You do not have access to project workspaces.'); return }
+      setWorkspaceTab(target.tab ? { id: target.tab } : null)
+      setRoute({ name: 'project', id: target.id })
+    } else if (target.kind === 'admin') {
+      if (showAdmin) setRoute({ name: 'admin', section: target.section, sectionTab: target.tab })
+      else toast.info('That area lives in Admin — ask an admin for access.')
+    }
+  }
+
   // Global "Ask AI": route the orchestrator's chosen action to its workspace.
   const handleAiNavigate = (action) => {
     const destination = resolveAiDestination(action, route.name === 'project')
@@ -124,6 +137,7 @@ export default function App() {
         {route.name === 'home' && (showPlatforms ? <ProjectsHome
           canCreate={can('platform.create')}
           onOpen={(id) => { if (!showWorkspace) { toast.info('You do not have access to project workspaces.'); return }; setWorkspaceTab(null); setRoute({ name: 'project', id }) }}
+          onNavigate={handleHomeNavigate}
           onNew={(seed = 'blank') => setRoute({ name: 'wizard', seed })} />
           : <div className="m3-banner error">You don't have access to the Platforms page.</div>)}
         {route.name === 'wizard' && showPlatforms && <NewProjectWizard config={config} initialSeed={route.seed}
@@ -133,7 +147,7 @@ export default function App() {
           <div className="m3-page-title"><h1>Quick estimate</h1><p>One-off estimation without a platform — form, Jira browse, or spreadsheet.</p></div>
           <QuickEstimate config={config} />
         </>}
-        {route.name === 'admin' && (showAdmin ? <AdminConsole /> : <div className="m3-banner error">You don't have access to the admin area.</div>)}
+        {route.name === 'admin' && (showAdmin ? <AdminConsole initialSection={route.section} initialTab={route.sectionTab} /> : <div className="m3-banner error">You don't have access to the admin area.</div>)}
       </div>}
     {askAi && <AskAiDialog onClose={() => setAskAi(false)} onNavigate={handleAiNavigate} />}
   </div>

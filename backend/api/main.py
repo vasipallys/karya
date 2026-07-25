@@ -42,6 +42,7 @@ from backend.planning.router import router as planning_router
 from backend.workflow.router import router as workflow_router
 from backend.projects.router import router as projects_router
 from backend.reporting.router import router as reporting_router
+from backend.home.router import router as home_router
 from backend.resources.router import router as resources_router
 from backend.storage.db import checkpoint_path, init_db
 
@@ -132,6 +133,7 @@ app.include_router(planning_router)
 app.include_router(resources_router)
 app.include_router(access_router)
 app.include_router(reporting_router)
+app.include_router(home_router)
 app.include_router(ai_router)
 app.include_router(l1arch_router)
 app.include_router(l2arch_router)

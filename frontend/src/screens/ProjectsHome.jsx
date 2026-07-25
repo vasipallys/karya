@@ -1,6 +1,7 @@
 import { BookOpen, FolderGit2, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
+import HomeInbox from './HomeInbox'
 
 // Tonal container / accent pairs (Material 3 style) chosen deterministically per project.
 const AVATAR_COLORS = [
@@ -89,9 +90,20 @@ function ProjectCard({ project, onOpen, onDelete }) {
   )
 }
 
-export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
+export default function ProjectsHome({ onOpen, onNew, onNavigate, canCreate = true }) {
   const [projects, setProjects] = useState(null)
   const [error, setError] = useState(null)
+  const gridRef = useRef(null)
+
+  // The inbox deep-links out to project/admin modules via onNavigate; the one
+  // in-page target ("Platforms") scrolls to this page's own grid.
+  const handleNavigate = (target) => {
+    if (target?.kind === 'platforms') {
+      gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    onNavigate?.(target)
+  }
 
   const refresh = () => {
     setError(null)
@@ -120,6 +132,8 @@ export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
         </div>
       </header>
 
+      <HomeInbox onNavigate={handleNavigate} />
+
       {projects === null && !error && <div className="proj-loading"><LoaderCircle size={22} /> {'Loading platforms\u2026'}</div>}
       {error && <div className="m3-banner error">{String(error.message || error)} <button className="m3-btn text small" onClick={refresh}><RefreshCw size={13} /> Retry</button></div>}
 
@@ -138,7 +152,7 @@ export default function ProjectsHome({ onOpen, onNew, canCreate = true }) {
       )}
 
       {projects !== null && !isEmpty && (
-        <div className="proj-grid">
+        <div className="proj-grid" ref={gridRef}>
           {(projects || []).map((project) => (
             <ProjectCard key={project.id} project={project} onOpen={onOpen} onDelete={remove} />
           ))}
