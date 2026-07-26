@@ -236,6 +236,234 @@ def parse_create(text: str, names: list[str]) -> dict[str, str] | None:
     return {"level": level, "name": name, "parent": parent, "target": target, "label": label}
 
 
+# ---------------------------------------------------------------------------
+# L1 operating-plan language
+#
+# "Tribe" and "squad" are not C4 element types in Karya. They live in an L1
+# operating plan. Keep this router deterministic and provider-independent so a
+# model can never reinterpret "add a tribe" as "create an L2".
+
+_AGILE_UNIT = re.compile(r"\b(tribe|squad)s?\b", re.IGNORECASE)
+_LIST_VERB = re.compile(r"\b(list|show|display|which|what|how many)\b", re.IGNORECASE)
+_DELETE_VERB = re.compile(r"\b(delete|remove)\b", re.IGNORECASE)
+_CREATE_VERB = re.compile(r"\b(create|add|new)\b", re.IGNORECASE)
+
+
+def _resolve_catalog_name(fragment: str, values: list[str]) -> str:
+    """Resolve a phrase against a small catalog while tolerating punctuation.
+
+    Exact normalized matches win, followed by a catalog value contained in the
+    phrase. We intentionally do not fuzzy-match writes: the proposal must name
+    a real scope/unit or ask the user instead of guessing.
+    """
+    cleaned = re.sub(
+        r"\b(the|a|an|current|operating|plan|initiative|system|platform)\b",
+        " ",
+        fragment,
+        flags=re.IGNORECASE,
+    )
+    key = _squash(cleaned)
+    if not key:
+        return ""
+    exact = next((value for value in values if _squash(value) == key), "")
+    if exact:
+        return exact
+    contained = [value for value in values if _squash(value) and _squash(value) in key]
+    return max(contained, key=len) if contained else ""
+
+
+def _unit_name_from_create(text: str, unit_type: str) -> str:
+    quoted = re.search(r"[\"'“‘]([^\"'”’]{1,100})[\"'”’]", text)
+    called = re.search(
+        r"\b(?:called|named)\s+[\"'“‘]?(.+?)[\"'”’]?"
+        r"(?=\s+(?:for|in|under|within|with)\b|[?.,]|$)",
+        text,
+        re.IGNORECASE,
+    )
+    if called:
+        return _clean_name(called.group(1))
+    if quoted:
+        return _clean_name(quoted.group(1))
+    before = re.search(
+        rf"\b(?:create|add)\b\s+(?:a|an|the|new\s+)*?(.+?)\s+{unit_type}\b",
+        text,
+        re.IGNORECASE,
+    )
+    if before:
+        value = _clean_name(before.group(1))
+        if value.lower() not in {"", "a", "an", "the", "new", unit_type}:
+            return value
+    return ""
+
+
+def parse_operating_plan_intent(
+    text: str,
+    units: list[dict[str, str]],
+    l1_names: list[str],
+    screen_l1: str = "",
+) -> dict[str, object] | None:
+    """Interpret tribe/squad/team-member operations outside the LLM.
+
+    Returned keys align with :class:`ChatCommand`. The service layer still
+    resolves every name again and enforces planning invariants on Apply.
+    """
+    low = text.lower().strip()
+    unit_names = [str(unit.get("name") or "") for unit in units if unit.get("name")]
+
+    removal = re.search(
+        r"\b(?:remove|delete)\s+(.+?)\s+from\s+(.+?)[?.]*$",
+        text,
+        re.IGNORECASE,
+    )
+    if removal:
+        target = _resolve_catalog_name(removal.group(2), unit_names)
+        if target or _AGILE_UNIT.search(removal.group(2)):
+            return {
+                "action": "remove_team_member",
+                "name": removal.group(1).strip(" \"'“”‘’"),
+                "parent": target or removal.group(2).strip(" \"'“”‘’?."),
+                "scope": screen_l1 or "",
+            }
+
+    allocation_update = re.search(
+        r"\b(?:set|change|update)\s+(.+?)(?:['’]s)?\s+allocation\s+to\s+"
+        r"(\d+(?:\.\d+)?)\s*%\s+(?:in|on|for)\s+(.+?)[?.]*$",
+        text,
+        re.IGNORECASE,
+    )
+    if allocation_update:
+        target = _resolve_catalog_name(allocation_update.group(3), unit_names)
+        if target or _AGILE_UNIT.search(allocation_update.group(3)):
+            return {
+                "action": "update_team_member",
+                "name": allocation_update.group(1).strip(" \"'“”‘’"),
+                "parent": target or allocation_update.group(3).strip(" \"'“”‘’?."),
+                "scope": screen_l1 or "",
+                "allocation_percent": float(allocation_update.group(2)),
+            }
+
+    # "Add Priya to Checkout Squad as QA at 50%" is a membership operation,
+    # not a request to create another squad.
+    member = re.search(
+        r"\b(?:add|assign|put)\s+(.+?)\s+to\s+(.+?)"
+        r"(?:\s+as\s+(.+?))?(?:\s+at\s+(\d+(?:\.\d+)?)\s*%)?[?.]*$",
+        text,
+        re.IGNORECASE,
+    )
+    if member:
+        target = _resolve_catalog_name(member.group(2), unit_names)
+        if target or _AGILE_UNIT.search(member.group(2)):
+            person = member.group(1).strip(" \"'“”‘’")
+            role = (member.group(3) or "").strip()
+            allocation = float(member.group(4)) if member.group(4) else None
+            scope = screen_l1 or ""
+            return {
+                "action": "assign_team_member",
+                "name": person,
+                "parent": target or member.group(2).strip(" \"'“”‘’?."),
+                "scope": scope,
+                "role": role,
+                "allocation_percent": allocation,
+            }
+
+    unit_match = _AGILE_UNIT.search(text)
+    if not unit_match:
+        if screen_l1 and _LIST_VERB.search(text) and re.search(r"\bteams?\b", low):
+            return {"action": "list_agile_units", "unit_type": "", "scope": screen_l1}
+        # "Create/add a team" is unsafe to guess in the L1 planning screen.
+        if screen_l1 and _CREATE_VERB.search(text) and re.search(r"\bteam\b", low):
+            return {
+                "action": "answer",
+                "reply": (
+                    "Do you want a **tribe** (strategic ownership) or a **squad** "
+                    "(delivery team)? Name the type and I will propose the right change."
+                ),
+            }
+        return None
+
+    mentioned_types = {match.group(1).lower() for match in _AGILE_UNIT.finditer(text)}
+    unit_type = unit_match.group(1).lower()
+    scope = screen_l1 or ""
+    # Explicit L1 scope can be stated as "for/in Corporate Banking System".
+    scope_match = re.search(
+        r"\b(?:for|in|within)\s+(.+?)(?:[?.]|$)",
+        text,
+        re.IGNORECASE,
+    )
+    if scope_match:
+        scope = _resolve_catalog_name(scope_match.group(1), l1_names) or scope_match.group(1).strip(" \"'“”‘’?.")
+
+    if _LIST_VERB.search(text) and not _CREATE_VERB.search(text):
+        list_type = next(iter(mentioned_types)) if len(mentioned_types) == 1 else ""
+        return {"action": "list_agile_units", "unit_type": list_type, "scope": scope}
+
+    rename = re.search(r"\brename\s+(.+?)\s+to\s+(.+?)[?.]*$", text, re.IGNORECASE)
+    if rename:
+        current = _resolve_catalog_name(rename.group(1), unit_names) or _clean_name(rename.group(1))
+        return {
+            "action": "update_agile_unit",
+            "name": current,
+            "new_name": _clean_name(rename.group(2)),
+            "unit_type": unit_type,
+            "scope": scope,
+        }
+
+    if _DELETE_VERB.search(text):
+        remainder = re.sub(r"^.*?\b(?:delete|remove)\b\s+", "", text, flags=re.IGNORECASE).strip(" ?.!")
+        current = _resolve_catalog_name(remainder, unit_names)
+        if not current:
+            current = re.sub(r"\b(?:tribe|squad)\b", "", remainder, flags=re.IGNORECASE).strip(" \"'“”‘’")
+        return {
+            "action": "delete_agile_unit",
+            "name": current,
+            "unit_type": unit_type,
+            "scope": scope,
+        }
+
+    if not _CREATE_VERB.search(text):
+        return None
+
+    name = _unit_name_from_create(text, unit_type)
+    parent = ""
+    if unit_type == "squad":
+        tribe_names = [
+            str(unit.get("name") or "") for unit in units if unit.get("unit_type") == "tribe"
+        ]
+        parent_match = re.search(r"\b(?:under|to)\s+(.+?)(?:\s+for\b|[?.]|$)", text, re.IGNORECASE)
+        if parent_match:
+            parent = _resolve_catalog_name(parent_match.group(1), tribe_names) or parent_match.group(1).strip(" \"'“”‘’?.")
+        else:
+            in_match = re.search(r"\bin\s+(.+?)(?:\s+for\b|[?.]|$)", text, re.IGNORECASE)
+            if in_match:
+                parent = _resolve_catalog_name(in_match.group(1), tribe_names)
+                if parent:
+                    scope = screen_l1 or ""
+
+    # A natural "create a tribe for Corporate Banking System" contains a clear
+    # scope but no explicit unit name. Use a transparent conventional name.
+    if not name and scope:
+        base = re.sub(r"\s+(?:system|platform|initiative)$", "", scope, flags=re.IGNORECASE).strip()
+        name = f"{base} {unit_type.title()}"
+    if not name and unit_type == "squad" and parent:
+        base = re.sub(r"\s+tribe$", "", parent, flags=re.IGNORECASE).strip()
+        name = f"{base} Squad"
+
+    lead_match = re.search(r"\b(?:led by|lead(?:er)?\s+(?:is\s+)?)\s*([^,.;]+)", text, re.IGNORECASE)
+    capacity_match = re.search(r"\b(\d+(?:\.\d+)?)\s*fte\b", text, re.IGNORECASE)
+    velocity_match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:points?|pts?)\s*(?:per|/)\s*sprint\b", text, re.IGNORECASE)
+
+    return {
+        "action": "create_agile_unit",
+        "name": name,
+        "parent": parent,
+        "scope": scope,
+        "unit_type": unit_type,
+        "lead_name": (lead_match.group(1).strip() if lead_match else ""),
+        "capacity_fte": (float(capacity_match.group(1)) if capacity_match else None),
+        "target_velocity": (float(velocity_match.group(1)) if velocity_match else None),
+    }
+
+
 def classify_read(text: str, names: list[str], screen_level: str = "", screen_element: str = "") -> tuple[str, str, str] | None:
     """Route a *read* request to a deterministic, DB-grounded action.
 

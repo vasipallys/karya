@@ -4,6 +4,8 @@ import { api } from '../api/client'
 import AiAssist from '../components/AiAssist'
 import FlowForward from '../components/FlowForward'
 import LevelBreadcrumb from '../components/LevelBreadcrumb'
+import LevelDefinition from '../components/LevelDefinition'
+import LevelNavigator from '../components/LevelNavigator'
 import { MarkdownViewer } from '../components/MarkdownEditor'
 import MermaidView from '../components/MermaidView'
 import MermaidWorkbench from '../components/MermaidWorkbench'
@@ -14,7 +16,7 @@ const DiagramStudio = lazy(() => import('./DiagramStudio'))
 
 const TABS = [
   { id: 'overview', label: 'Container diagram', icon: Network },
-  { id: 'containers', label: 'Containers & boundaries', icon: Boxes },
+  { id: 'containers', label: 'Structural assets', icon: Boxes },
   { id: 'apis', label: 'APIs & Data', icon: Plug },
   { id: 'nfrs', label: 'NFRs', icon: ShieldAlert },
   { id: 'integrations', label: 'Integration plan', icon: Network },
@@ -38,6 +40,7 @@ const SELECT = (options) => ({ type: 'select', options })
 const FIELDS = {
   container: [
     { key: 'name', label: 'Container / service' },
+    { key: 'container_type', label: 'Structural type', ...SELECT(['application', 'service', 'data_store', 'platform', 'cloud_resource', 'job', 'gateway']) },
     { key: 'capability', label: 'Business capability' },
     { key: 'responsibilities', label: 'Responsibilities', type: 'textarea' },
     { key: 'owns_data', label: 'Owns data' },
@@ -80,7 +83,7 @@ const FIELDS = {
   ],
 }
 const DEFAULTS = {
-  container: { name: '', capability: '', responsibilities: '', owns_data: '', owner_team: '', security_classification: 'internal', nfr_criticality: 'medium', status: 'active' },
+  container: { name: '', container_type: 'service', capability: '', responsibilities: '', owns_data: '', owner_team: '', security_classification: 'internal', nfr_criticality: 'medium', status: 'active' },
   api: { name: '', provider: '', consumer: '', endpoint: '', api_type: 'REST', data_classification: 'internal', authentication: '', version: 'v1', owner: '', status: 'proposed' },
   nfr: { name: '', category: 'performance', scenario: '', metric: '', baseline: '', target: '', owner: '', risk_level: 'medium', status: 'open' },
   integration: { name: '', source_system: '', target_system: '', integration_type: 'API', data_exchanged: '', security_method: '', status: 'planned' },
@@ -192,9 +195,10 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
     } catch (err) { fail(err) } finally { setBusy(false) }
   }
 
-  if (elements.length === 0) {
-    return <div className="l1-empty-panel prominent"><Boxes size={38} /><h2>No L2 container yet</h2><p>Create an L2 container/epic on the C4 canvas first (a child of an L1 initiative). It becomes the anchor for container architecture.</p><button className="m3-btn filled" onClick={onOpenCanvas}>Open C4 canvas</button></div>
-  }
+  if (elements.length === 0) return <>
+    <LevelNavigator elements={allElements} activeLevel="L2" onNavigate={onOpenElement} onOpenCanvas={onOpenCanvas} />
+    <div className="l1-empty-panel prominent"><Boxes size={38} /><h2>No L2 container yet</h2><p>Create an L2 container/epic on the C4 canvas first (a child of an L1 initiative). It becomes the anchor for container architecture.</p><button className="m3-btn filled" onClick={() => onOpenCanvas?.()}>Open C4 canvas</button></div>
+  </>
 
   return <div className="l1-planning">
     {error && <div className="m3-banner error"><span>{String(error.message || error)}</span><button className="m3-btn text small" onClick={() => setError(null)}>Dismiss</button></div>}
@@ -206,6 +210,7 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
           <LevelBreadcrumb elements={allElements} elementId={l2Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
+        <button className="m3-btn text small" onClick={() => onOpenCanvas?.(l2Id)}><Network size={15} /> View in C4</button>
         <FlowForward projectId={projectId} elementId={l2Id} label="AI: draft stories" childLabel="stories (L3)"
           disabled={!l2Id} onApplied={loadGraph}
           guidance={() => [
@@ -220,7 +225,10 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
       </div>
     </header>
 
+    <LevelNavigator elements={allElements} elementId={l2Id} activeLevel="L2" onNavigate={onOpenElement} onOpenCanvas={onOpenCanvas} />
+
     {ws && <>
+      <LevelDefinition definition={ws.level_definition} />
       <div className="l1arch-head"><ReadinessCard readiness={ws.readiness} /></div>
       <nav className="l1arch-tabs" aria-label="L2 sections">
         {TABS.map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => (id === 'summary' ? openSummary() : id === 'traceability' ? openTraceability() : setTab(id))}><Icon size={15} /> {label}</button>)}
@@ -250,7 +258,7 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
         </div>
       </div>}
 
-      {tab === 'containers' && <ArtifactTab entity="container" title="Containers & Service Boundaries" columns={['name', 'capability', 'owner_team', 'security_classification', 'nfr_criticality', 'status']} rows={ws.containers} onAdd={() => openDialog('container')} onEdit={openDialog} onDelete={removeEntity} />}
+      {tab === 'containers' && <ArtifactTab entity="container" title="Applications, Services, Data Stores, Platform & Cloud" columns={['name', 'container_type', 'capability', 'owner_team', 'security_classification', 'nfr_criticality', 'status']} rows={ws.containers} onAdd={() => openDialog('container')} onEdit={openDialog} onDelete={removeEntity} />}
       {tab === 'apis' && <ArtifactTab entity="api" title="API & Data Contracts" columns={['name', 'provider', 'consumer', 'api_type', 'data_classification', 'authentication', 'version', 'status']} rows={ws.apis} onAdd={() => openDialog('api')} onEdit={openDialog} onDelete={removeEntity} />}
       {tab === 'nfrs' && <ArtifactTab entity="nfr" title="Non-Functional Requirements" columns={['name', 'category', 'metric', 'target', 'risk_level', 'status']} rows={ws.nfrs} onAdd={() => openDialog('nfr')} onEdit={openDialog} onDelete={removeEntity} />}
       {tab === 'integrations' && <ArtifactTab entity="integration" title="Integration Plan" columns={['name', 'source_system', 'target_system', 'integration_type', 'security_method', 'status']} rows={ws.integrations} onAdd={() => openDialog('integration')} onEdit={openDialog} onDelete={removeEntity} />}

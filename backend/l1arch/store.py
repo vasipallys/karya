@@ -373,6 +373,7 @@ def delete_comment(project_id: str, comment_id: str) -> None:
 def get_baseline(project_id: str, l1_element_id: str) -> dict[str, Any]:
     """Everything for the L1 architecture tab in one call."""
     from backend.l1arch.service import readiness
+    from backend.c4.taxonomy import level_definition
 
     with connect() as conn:
         element = _require_l1(conn, project_id, l1_element_id)
@@ -385,6 +386,7 @@ def get_baseline(project_id: str, l1_element_id: str) -> dict[str, Any]:
         "risks": list_risks(l1_element_id),
         "approvals": approval_state(l1_element_id),
         "comments": list_comments(l1_element_id),
+        "level_definition": level_definition("L1"),
     }
     baseline["readiness"] = readiness(project_id, l1_element_id, baseline)
     return baseline

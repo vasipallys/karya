@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 from backend.l3arch import service, store
 from backend.l3arch.models import (
+    BehaviorViewCreate,
+    BehaviorViewUpdate,
     ComponentCreate,
     ComponentUpdate,
     ConcernCreate,
@@ -151,4 +153,21 @@ async def update_concern(project_id: str, l3_element_id: str, item_id: str, payl
 @router.delete("/concerns/{item_id}")
 async def delete_concern(project_id: str, l3_element_id: str, item_id: str) -> dict[str, str]:
     _run(lambda: store.delete_concern(project_id, item_id))
+    return {"status": "deleted"}
+
+
+# ---- behavioral views ----
+@router.post("/behavior-views")
+async def create_behavior_view(project_id: str, l3_element_id: str, payload: BehaviorViewCreate) -> dict[str, Any]:
+    return _run(lambda: store.create_behavior_view(project_id, l3_element_id, payload))
+
+
+@router.patch("/behavior-views/{item_id}")
+async def update_behavior_view(project_id: str, l3_element_id: str, item_id: str, payload: BehaviorViewUpdate) -> dict[str, Any]:
+    return _run(lambda: store.update_behavior_view(project_id, item_id, payload))
+
+
+@router.delete("/behavior-views/{item_id}")
+async def delete_behavior_view(project_id: str, l3_element_id: str, item_id: str) -> dict[str, str]:
+    _run(lambda: store.delete_behavior_view(project_id, item_id))
     return {"status": "deleted"}

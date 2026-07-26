@@ -112,6 +112,7 @@ export default function ProjectWorkspace({ projectId, config, notice, requestedT
   const [l2Target, setL2Target] = useState(null)
   const [l3Target, setL3Target] = useState(null)
   const [l4Target, setL4Target] = useState(null)
+  const [canvasTarget, setCanvasTarget] = useState(null)
   const [project, setProject] = useState(null)
   const [error, setError] = useState(null)
   const [wizard, setWizard] = useState(false)
@@ -139,6 +140,13 @@ export default function ProjectWorkspace({ projectId, config, notice, requestedT
     setTab(target)
   }, [])
 
+  // A request object lets repeated returns to the same element restore the
+  // canvas drill path and selection every time.
+  const openCanvasElement = useCallback((elementId) => {
+    setCanvasTarget({ id: elementId || null })
+    setTab('canvas')
+  }, [])
+
   if (error) return <div className="m3-content"><div className="m3-banner error">{String(error.message || error)}</div></div>
   if (!project) return <p className="m3-content">Loading platform…</p>
 
@@ -160,17 +168,23 @@ export default function ProjectWorkspace({ projectId, config, notice, requestedT
       {wizard && <WorkflowWizard projectId={projectId} onNavigate={setTab} onClose={() => setWizard(false)} />}
       {notice && tab === 'canvas' && <div className="m3-banner info">{notice}</div>}
       {tab === 'canvas' && <C4Canvas projectId={projectId} config={config} reloadToken={graphVersion}
-        onOpenL1Plan={(elementId) => { setPlanningL1Id(elementId); setTab('planning') }} />}
+        requestedElement={canvasTarget} onOpenWorkspace={openElement} />}
       {tab === 'planning' && <L1Planning projectId={projectId} requestedL1Id={planningL1Id} reloadToken={graphVersion}
-        onL1Change={setPlanningL1Id} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} />}
-      {tab === 'l2arch' && <Suspense fallback={<p className="l1-loading">Loading L2 workspace…</p>}><L2Architecture projectId={projectId} requestedId={l2Target} reloadToken={graphVersion} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
-      {tab === 'l3arch' && <Suspense fallback={<p className="l1-loading">Loading L3 workspace…</p>}><L3Architecture projectId={projectId} requestedId={l3Target} reloadToken={graphVersion} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
-      {tab === 'l4arch' && <Suspense fallback={<p className="l1-loading">Loading L4 workspace…</p>}><L4Architecture projectId={projectId} requestedId={l4Target} reloadToken={graphVersion} onOpenCanvas={() => setTab('canvas')} onOpenElement={openElement} /></Suspense>}
+        onL1Change={setPlanningL1Id} onOpenCanvas={openCanvasElement} onOpenElement={openElement} />}
+      {tab === 'l2arch' && <Suspense fallback={<p className="l1-loading">Loading L2 workspace…</p>}><L2Architecture projectId={projectId} requestedId={l2Target} reloadToken={graphVersion} onOpenCanvas={openCanvasElement} onOpenElement={openElement} /></Suspense>}
+      {tab === 'l3arch' && <Suspense fallback={<p className="l1-loading">Loading L3 workspace…</p>}><L3Architecture projectId={projectId} requestedId={l3Target} reloadToken={graphVersion} onOpenCanvas={openCanvasElement} onOpenElement={openElement} /></Suspense>}
+      {tab === 'l4arch' && <Suspense fallback={<p className="l1-loading">Loading L4 workspace…</p>}><L4Architecture projectId={projectId} requestedId={l4Target} reloadToken={graphVersion} onOpenCanvas={openCanvasElement} onOpenElement={openElement} /></Suspense>}
       {tab === 'rollup' && <RollupDashboard projectId={projectId} onNavigate={openElement} reloadToken={graphVersion} />}
       {tab === 'quick' && <QuickEstimate config={config} />}
       {tab === 'overview' && <Overview project={project} config={config} onChanged={refresh} />}
     </div>
     <ChatDock projectId={projectId} onChanged={modelChanged} onOpenElement={openElement}
+      onNavigate={(result) => {
+        if (result.workspace === 'planning') {
+          if (result.l1_id) setPlanningL1Id(result.l1_id)
+          setTab('planning')
+        }
+      }}
       screenContext={{
         tab,
         tab_label: TABS.find((item) => item.id === tab)?.label || tab,

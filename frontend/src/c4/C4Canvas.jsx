@@ -28,7 +28,7 @@ function C4Node({ data }) {
 
 const nodeTypes = { c4: C4Node }
 
-export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken }) {
+export default function C4Canvas({ projectId, config, requestedElement, onOpenWorkspace, reloadToken }) {
   const [graph, setGraph] = useState({ elements: [], relations: [] })
   const [drill, setDrill] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -39,11 +39,37 @@ export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken 
   const [estimating, setEstimating] = useState(null)
   const [scaffold, setScaffold] = useState(null) // { description, loading, result, error }
   const resultsCache = useRef(new Map())
+  const handledRequest = useRef(null)
 
   const refresh = useCallback(() => api.c4Graph(projectId).then(setGraph).catch(setError), [projectId])
   // reloadToken bumps when something outside the canvas (e.g. the chat
   // assistant) changes the model, so the graph never goes stale.
   useEffect(() => { refresh() }, [refresh, reloadToken])
+
+  useEffect(() => {
+    if (!requestedElement || handledRequest.current === requestedElement || graph.elements.length === 0) return
+    if (!requestedElement.id) {
+      handledRequest.current = requestedElement
+      setDrill([])
+      setSelectedId(null)
+      return
+    }
+
+    const byId = new Map(graph.elements.map((element) => [element.id, element]))
+    const target = byId.get(requestedElement.id)
+    if (!target) return
+    handledRequest.current = requestedElement
+    const ancestors = []
+    const visited = new Set([target.id])
+    let parent = byId.get(target.parent_id)
+    while (parent && !visited.has(parent.id)) {
+      ancestors.unshift(parent)
+      visited.add(parent.id)
+      parent = byId.get(parent.parent_id)
+    }
+    setDrill(ancestors)
+    setSelectedId(target.id)
+  }, [graph.elements, requestedElement])
 
   const runScaffold = async () => {
     const description = scaffold?.description.trim()
@@ -209,7 +235,7 @@ export default function C4Canvas({ projectId, config, onOpenL1Plan, reloadToken 
         <InspectorPanel projectId={projectId} element={selected} config={config}
           hasCachedResult={selected ? resultsCache.current.has(selected.id) : false}
           onEstimate={(element, autoStart) => setEstimating({ element, autoStart })}
-          onOpenL1Plan={onOpenL1Plan}
+          onOpenWorkspace={onOpenWorkspace}
           onChanged={refresh} onDeleted={() => { setSelectedId(null); refresh() }} />
       </DockablePanel>
     </div>

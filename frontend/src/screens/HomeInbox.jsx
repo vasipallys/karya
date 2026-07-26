@@ -1,8 +1,8 @@
 import {
-  AlertTriangle, Boxes, CheckCircle2, ChevronRight, Clock, FolderKanban, Gauge, Inbox,
+  AlertTriangle, ArrowLeft, Boxes, CheckCircle2, ChevronRight, Clock, FolderKanban, Gauge, Inbox,
   ListChecks, MessageSquare, RefreshCw, ShieldAlert, Target, Users,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 
@@ -114,15 +114,13 @@ function ActionRow({ action, go, canGo }) {
   )
 }
 
-export default function HomeInbox({ onNavigate }) {
+export default function HomeInbox({ onNavigate, view = 'overview', onBack }) {
   const { user, can } = useAuth()
   const identity = user ? `${user.staff_id || ''}:${user.role || ''}` : ''
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [collapsed, setCollapsed] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
-  const tasksRef = useRef(null)
-  const actionsRef = useRef(null)
 
   // Fetch for any signed-in identity — a directory person gets a personal
   // dashboard, the bootstrap admin gets the org-wide one (the backend decides
@@ -154,7 +152,6 @@ export default function HomeInbox({ onNavigate }) {
     return true // in-page targets (platforms grid)
   }
   const go = (target) => { if (canGo(target)) onNavigate?.(target) }
-  const scrollTo = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
   // Nothing to personalise for the password-less bootstrap admin (no directory id).
   if (data && !data.user) return null
@@ -176,27 +173,97 @@ export default function HomeInbox({ onNavigate }) {
 
   const reportingTarget = { kind: 'admin', section: 'reporting', tab: 'resources' }
   const resourcesTarget = { kind: 'admin', section: 'resources' }
+  const inboxTarget = (nextView) => ({ kind: 'inbox', view: nextView })
   const tileClick = (target) => (canGo(target) ? () => go(target) : undefined)
 
   const tiles = isOrg ? [
-    { key: 'open', icon: Inbox, label: 'Open work', value: summary.tasks_open, tone: 'primary', onClick: () => scrollTo(tasksRef), hint: 'Jump to the work inbox' },
-    { key: 'actions', icon: AlertTriangle, label: 'Actions pending', value: summary.actions, tone: summary.actions ? 'warn' : 'default', onClick: () => scrollTo(actionsRef), hint: 'Jump to pending actions' },
-    { key: 'atrisk', icon: AlertTriangle, label: 'At risk', value: summary.at_risk, tone: summary.at_risk ? 'warn' : 'default', onClick: () => scrollTo(actionsRef), hint: 'Jump to pending actions' },
-    { key: 'overdue', icon: Clock, label: 'Overdue', value: summary.overdue, tone: summary.overdue ? 'warn' : 'default', onClick: () => scrollTo(actionsRef), hint: 'Jump to pending actions' },
+    { key: 'open', icon: Inbox, label: 'Open work', value: summary.tasks_open, tone: 'primary', onClick: () => go(inboxTarget('work')), hint: 'Open the work inbox' },
+    { key: 'actions', icon: AlertTriangle, label: 'Actions pending', value: summary.actions, tone: summary.actions ? 'warn' : 'default', onClick: () => go(inboxTarget('actions')), hint: 'Open pending actions' },
+    { key: 'atrisk', icon: AlertTriangle, label: 'At risk', value: summary.at_risk, tone: summary.at_risk ? 'warn' : 'default', onClick: () => go(inboxTarget('at_risk')), hint: 'Open at-risk work' },
+    { key: 'overdue', icon: Clock, label: 'Overdue', value: summary.overdue, tone: summary.overdue ? 'warn' : 'default', onClick: () => go(inboxTarget('overdue')), hint: 'Open overdue work' },
     { key: 'platforms', icon: FolderKanban, label: 'Platforms', value: summary.projects, onClick: () => go({ kind: 'platforms' }), hint: 'See all platforms' },
     { key: 'squads', icon: Boxes, label: 'Squads', value: summary.squads, onClick: tileClick(reportingTarget), hint: 'Open reporting · resource view' },
     { key: 'resources', icon: Users, label: 'Resources', value: summary.resources, onClick: tileClick(resourcesTarget), hint: 'Open the resource directory' },
     { key: 'bench', icon: Users, label: 'On bench', value: summary.on_bench, tone: summary.on_bench ? 'warn' : 'default', onClick: tileClick(resourcesTarget), hint: 'Open the resource directory' },
   ] : [
-    { key: 'open', icon: Inbox, label: 'Open tasks', value: summary.tasks_open, tone: 'primary', onClick: () => scrollTo(tasksRef), hint: 'Jump to your tasks' },
-    { key: 'actions', icon: AlertTriangle, label: 'Actions pending', value: summary.actions, tone: summary.actions ? 'warn' : 'default', onClick: () => scrollTo(actionsRef), hint: 'Jump to pending actions' },
-    { key: 'atrisk', icon: AlertTriangle, label: 'At risk', value: summary.at_risk, tone: summary.at_risk ? 'warn' : 'default', onClick: () => scrollTo(actionsRef), hint: 'Jump to pending actions' },
-    { key: 'overdue', icon: Clock, label: 'Overdue', value: summary.overdue, tone: summary.overdue ? 'warn' : 'default', onClick: () => scrollTo(actionsRef), hint: 'Jump to pending actions' },
+    { key: 'open', icon: Inbox, label: 'Open tasks', value: summary.tasks_open, tone: 'primary', onClick: () => go(inboxTarget('work')), hint: 'Open your tasks' },
+    { key: 'actions', icon: AlertTriangle, label: 'Actions pending', value: summary.actions, tone: summary.actions ? 'warn' : 'default', onClick: () => go(inboxTarget('actions')), hint: 'Open pending actions' },
+    { key: 'atrisk', icon: AlertTriangle, label: 'At risk', value: summary.at_risk, tone: summary.at_risk ? 'warn' : 'default', onClick: () => go(inboxTarget('at_risk')), hint: 'Open at-risk work' },
+    { key: 'overdue', icon: Clock, label: 'Overdue', value: summary.overdue, tone: summary.overdue ? 'warn' : 'default', onClick: () => go(inboxTarget('overdue')), hint: 'Open overdue work' },
     { key: 'allocation', icon: Gauge, label: 'Allocation', value: `${summary.allocation}%`, onClick: tileClick(reportingTarget), hint: 'Open reporting · resource view' },
     { key: 'squads', icon: Boxes, label: 'Squads', value: summary.squads, onClick: tileClick(reportingTarget), hint: 'Open reporting · resource view' },
     { key: 'projects', icon: FolderKanban, label: 'Projects', value: summary.projects, onClick: () => go({ kind: 'platforms' }), hint: 'See all platforms' },
     ...(isManager ? [{ key: 'reports', icon: Users, label: 'Reports', value: summary.reports, tone: summary.bench_reports ? 'warn' : 'default', onClick: tileClick(reportingTarget), hint: 'Open reporting · resource view' }] : []),
   ]
+
+  if (view !== 'overview') {
+    const definitions = {
+      actions: {
+        title: 'Actions pending',
+        description: 'Items that need attention across delivery, objectives, risks, reviews, and staffing.',
+        icon: AlertTriangle,
+        items: actions,
+        truncated: data.actions_truncated || 0,
+      },
+      work: {
+        title: isOrg ? 'Open work' : 'Open tasks',
+        description: isOrg ? 'Open delivery work across all platforms.' : 'Open delivery work assigned to your squads.',
+        icon: ListChecks,
+        items: tasks.filter((task) => task.status !== 'done'),
+        truncated: data.tasks_truncated || 0,
+      },
+      tasks: {
+        title: isOrg ? 'Work inbox' : 'Tasks inbox',
+        description: isOrg ? 'Delivery work across all platforms.' : 'Delivery work assigned to your squads.',
+        icon: ListChecks,
+        items: tasks,
+        truncated: data.tasks_truncated || 0,
+      },
+      at_risk: {
+        title: 'At-risk work',
+        description: 'Delivery work currently marked at risk.',
+        icon: ShieldAlert,
+        items: tasks.filter((task) => task.status === 'at_risk'),
+        truncated: Math.max(0, summary.at_risk - tasks.filter((task) => task.status === 'at_risk').length),
+      },
+      overdue: {
+        title: 'Overdue work',
+        description: 'Open delivery work whose due date has passed.',
+        icon: Clock,
+        items: tasks.filter((task) => task.overdue),
+        truncated: Math.max(0, summary.overdue - tasks.filter((task) => task.overdue).length),
+      },
+    }
+    const detail = definitions[view] || definitions.actions
+    const DetailIcon = detail.icon
+    return (
+      <section className="home-inbox home-inbox-detail" aria-label={detail.title}>
+        <header className="home-detail-head">
+          <button className="m3-btn text small" onClick={onBack}><ArrowLeft size={15} /> Back to Platforms</button>
+          <div>
+            <span className="home-detail-icon"><DetailIcon size={19} /></span>
+            <div><h1>{detail.title}</h1><p>{detail.description}</p></div>
+          </div>
+        </header>
+        <div className="home-panel home-detail-panel">
+          <div className="home-panel-head">
+            <h3><DetailIcon size={16} /> {detail.title}</h3>
+            <span className="home-count">{detail.items.length + detail.truncated}</span>
+          </div>
+          {detail.items.length === 0 ? (
+            <div className="home-empty"><CheckCircle2 size={22} /><p>Nothing to show here.</p></div>
+          ) : (
+            <ul className="home-list">
+              {view === 'actions'
+                ? detail.items.map((action) => <ActionRow key={action.id} action={action} go={go} canGo={canGo} />)
+                : detail.items.map((task) => <TaskRow key={task.id} task={task} go={go} canGo={canGo} />)}
+              {detail.truncated > 0 && <li className="home-more">+{detail.truncated} more</li>}
+            </ul>
+          )}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="home-inbox" aria-label="Your workspace">
@@ -226,10 +293,12 @@ export default function HomeInbox({ onNavigate }) {
           </div>
 
           <div className="home-columns">
-            <div className="home-panel" ref={tasksRef}>
+            <div className="home-panel">
               <div className="home-panel-head">
                 <h3><ListChecks size={16} /> {isOrg ? 'Work inbox' : 'Tasks inbox'}</h3>
-                <span className="home-count">{summary.tasks_total}</span>
+                <button className="home-panel-link" onClick={() => go(inboxTarget('tasks'))}>
+                  <span className="home-count">{summary.tasks_total}</span> View all <ChevronRight size={13} />
+                </button>
               </div>
               {tasks.length === 0 ? (
                 <div className="home-empty"><CheckCircle2 size={20} /><p>{isOrg ? 'No open work items across platforms.' : 'No tasks assigned to your squads.'}</p></div>
@@ -241,10 +310,12 @@ export default function HomeInbox({ onNavigate }) {
               )}
             </div>
 
-            <div className="home-panel" ref={actionsRef}>
+            <div className="home-panel">
               <div className="home-panel-head">
                 <h3><AlertTriangle size={16} /> Actions pending</h3>
-                <span className="home-count">{summary.actions}</span>
+                <button className="home-panel-link" onClick={() => go(inboxTarget('actions'))}>
+                  <span className="home-count">{summary.actions}</span> View all <ChevronRight size={13} />
+                </button>
               </div>
               {actions.length === 0 ? (
                 <div className="home-empty"><CheckCircle2 size={20} /><p>You're all caught up.</p></div>

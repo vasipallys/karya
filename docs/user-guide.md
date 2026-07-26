@@ -331,6 +331,9 @@ The **L2 arch**, **L3 arch**, and **L4 detail** tabs are structured the same way
 **readiness gauge + checklist** and produces a **Markdown + Mermaid summary**.
 
 **Common layout**
+- **Cross-level navigator** — move directly between **C4 Canvas**, **L1 Value**,
+  **L2 Structure**, **L3 Behavior**, and **L4 Change**. It preserves the nearest
+  related element in the current hierarchy and disables levels not created yet.
 - **Element picker** (top) — choose which L2/L3/L4 element you're working on.
 - **Diagram tab** — a split **Mermaid editor + live preview**; **Open studio** for
   full editing; the preview **maximizes** to a zoom/pan popup.
@@ -345,9 +348,10 @@ The **L2 arch**, **L3 arch**, and **L4 detail** tabs are structured the same way
 
 | Level | Artifacts | Governance | Extras |
 |-------|-----------|:----------:|--------|
-| **L2 container** | Containers & boundaries, API/data contracts, NFRs, integration plan | ✓ approvals + RACI | **Import**: OpenAPI → APIs, Kubernetes manifest → containers |
-| **L3 component** | Components (controller/service/repository/gateway…), interfaces & contracts, dependencies, cross-cutting concerns | ✓ approvals + RACI | — |
-| **L4 detail** | Code units (classes/functions/modules), test cases (given/when/then), Definition-of-Done checklist | lean — no approvals/RACI | Toggle DoD items done |
+| **L1 Value — Theme / Initiative** | Business goals, stakeholders, KPIs/OKRs, capabilities, risks and system context | ✓ approvals + RACI | Operating plan: tribes, squads, resources, work and cost |
+| **L2 Structure — Epic** | Typed applications, services, containers, APIs/data contracts, data stores, platform and cloud assets; NFRs and integrations | ✓ approvals + RACI | **Import**: OpenAPI → APIs, Kubernetes manifest → containers |
+| **L3 Behavior — Feature / Story** | User journeys, components, sequence flows, BPMN, ERD, test scenarios, interfaces, dependencies and cross-cutting concerns | ✓ approvals + RACI | Live Mermaid previews for behavior models |
+| **L4 Change — Task / Sub-task / PR** | Code units, tests, CI pipeline, code-review/PR evidence, IaC, release package and Definition-of-Done | lean — no approvals/RACI | Track delivery assets from planned → verified/released |
 
 **Governance (L2/L3).** Submit for review, then approve stages **in order**;
 completing them baselines the element. A rejection un-baselines it back to

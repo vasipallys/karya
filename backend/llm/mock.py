@@ -377,9 +377,9 @@ def _json_after(text: str, label: str) -> Any:
 def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
     """Deterministic offline proposals for the agentic services (LLM_PROVIDER=mock)."""
     from backend.ai.schemas import (
-        ChatCommand, C4Scaffold, DraftApi, DraftCapability, DraftChecklistItem, DraftCodeUnit, DraftComponent, DraftConcern,
+        ChatCommand, C4Scaffold, DraftApi, DraftBehaviorView, DraftCapability, DraftChecklistItem, DraftCodeUnit, DraftComponent, DraftConcern,
         DraftContainer, DraftDependency, DraftIntegration, DraftInterface, DraftNfr, DraftOkr, DraftRisk,
-        DraftStakeholder, DraftTestCase, FieldSummary, L1BaselineDraft, L2Draft, L3Draft, L4Draft,
+        DraftDeliveryAsset, DraftStakeholder, DraftTestCase, FieldSummary, L1BaselineDraft, L2Draft, L3Draft, L4Draft,
         NarrativeOutput, OrchestratorPlan, ProposedStory, ScaffoldElement, ScaffoldRelation,
         StaffingAssignment, StaffingProposal, StoryDecomposition,
     )
@@ -519,10 +519,10 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
             summary=f"Mock mode: an L2 container architecture for '{name}' — a web app, a BFF, a domain service and a database, secured via the identity provider.",
             container_diagram=diagram,
             containers=[
-                DraftContainer(name="Web App", capability="Experience", responsibilities="User-facing UI and journeys.", owner_team="Experience Squad", security_classification="internal"),
-                DraftContainer(name="BFF API", capability="Experience", responsibilities="Backend-for-frontend orchestration.", owner_team="Experience Squad", security_classification="internal"),
-                DraftContainer(name="Domain Service", capability="Core Processing", responsibilities="Core business logic and rules.", owner_team="Platform Squad", security_classification="confidential"),
-                DraftContainer(name="Database", capability="Data", responsibilities="System of record.", owner_team="Platform Squad", security_classification="restricted"),
+                DraftContainer(name="Web App", container_type="application", capability="Experience", responsibilities="User-facing UI and journeys.", owner_team="Experience Squad", security_classification="internal"),
+                DraftContainer(name="BFF API", container_type="gateway", capability="Experience", responsibilities="Backend-for-frontend orchestration.", owner_team="Experience Squad", security_classification="internal"),
+                DraftContainer(name="Domain Service", container_type="service", capability="Core Processing", responsibilities="Core business logic and rules.", owner_team="Platform Squad", security_classification="confidential"),
+                DraftContainer(name="Database", container_type="data_store", capability="Data", responsibilities="System of record.", owner_team="Platform Squad", security_classification="restricted"),
             ],
             apis=[
                 DraftApi(name="GET /profile", provider="Domain Service", consumer="BFF API", api_type="REST", data_classification="confidential", authentication="OAuth2"),
@@ -571,6 +571,31 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
                 DraftConcern(name="Structured logging", category="logging", approach="Correlation id on every request."),
                 DraftConcern(name="AuthN/AuthZ", category="security", approach="OAuth2 scopes enforced at the controller."),
             ],
+            behavior_views=[
+                DraftBehaviorView(
+                    name="Happy-path journey", view_type="user_journey",
+                    description="Customer completes the feature from request to confirmation.",
+                    mermaid_source="journey\n  title Happy path\n  section Complete request\n    Submit details: 5: Customer\n    Validate request: 4: API\n    Confirm outcome: 5: Customer",
+                    owner="Product Owner",
+                ),
+                DraftBehaviorView(
+                    name="Service sequence", view_type="sequence_flow",
+                    description="Runtime interaction across controller, service, and repository.",
+                    mermaid_source="sequenceDiagram\n  actor User\n  User->>Controller: submit\n  Controller->>Service: handle\n  Service->>Repository: save\n  Repository-->>Service: result\n  Service-->>User: confirmation",
+                    owner="Tech Lead",
+                ),
+                DraftBehaviorView(
+                    name="Domain data model", view_type="erd",
+                    description="Core data entities and their relationship.",
+                    mermaid_source="erDiagram\n  REQUEST ||--o{ AUDIT_EVENT : produces",
+                    owner="Data Owner",
+                ),
+                DraftBehaviorView(
+                    name="Acceptance scenarios", view_type="test_scenario",
+                    description="Given valid input, when submitted, then the result is stored and confirmed.",
+                    owner="QA",
+                ),
+            ],
         )
 
     if schema is L4Draft:
@@ -604,6 +629,12 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
                 DraftChecklistItem(item="Update API docs", category="docs"),
                 DraftChecklistItem(item="Security review of inputs", category="security"),
                 DraftChecklistItem(item="Peer code review", category="review"),
+            ],
+            delivery_assets=[
+                DraftDeliveryAsset(name="Build and test pipeline", asset_type="ci_pipeline", description="Runs lint, unit, integration, and security checks.", owner="Engineering"),
+                DraftDeliveryAsset(name="Pull request review", asset_type="code_review", description="Two-person review with required checks.", owner="Tech Lead"),
+                DraftDeliveryAsset(name="Deployment module", asset_type="iac", description="Versioned infrastructure and deployment configuration.", owner="Platform"),
+                DraftDeliveryAsset(name="Release package", asset_type="release_package", description="Signed artifact, notes, evidence, and rollback plan.", owner="Release Manager"),
             ],
         )
 

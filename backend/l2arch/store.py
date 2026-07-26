@@ -132,7 +132,7 @@ def _create(table: str, project_id: str, l2_element_id: str, columns: list[str],
 
 # ---- containers ----
 
-_CONTAINER_COLS = ["name", "capability", "responsibilities", "owns_data", "owner_team", "security_classification", "nfr_criticality", "status"]
+_CONTAINER_COLS = ["name", "container_type", "capability", "responsibilities", "owns_data", "owner_team", "security_classification", "nfr_criticality", "status"]
 
 
 def list_containers(l2_element_id: str) -> list[dict[str, Any]]:
@@ -314,6 +314,7 @@ def approval_state(l2_element_id: str) -> dict[str, Any]:
 
 def get_workspace(project_id: str, l2_element_id: str) -> dict[str, Any]:
     from backend.l2arch.service import readiness
+    from backend.c4.taxonomy import level_definition
 
     with connect() as conn:
         element = _require_l2(conn, project_id, l2_element_id)
@@ -332,6 +333,7 @@ def get_workspace(project_id: str, l2_element_id: str) -> dict[str, Any]:
         "approvals": approval_state(l2_element_id),
         "raci_artifacts": list(RACI_ARTIFACTS),
         "raci_roles": list(RACI_ROLES),
+        "level_definition": level_definition("L2"),
     }
     workspace["readiness"] = readiness(project_id, l2_element_id, workspace)
     return workspace

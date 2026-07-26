@@ -13,7 +13,7 @@ from backend.api.main import app
 from backend.c4 import store as c4_store
 from backend.c4.models import C4ElementCreate
 from backend.l3arch import service, store
-from backend.l3arch.models import ComponentCreate, ConcernCreate, DependencyCreate, InterfaceCreate, L3Update
+from backend.l3arch.models import BehaviorViewCreate, ComponentCreate, ConcernCreate, DependencyCreate, InterfaceCreate, L3Update
 from backend.projects.models import ProjectCreate
 from backend.projects.store import create_project
 from backend.storage import db
@@ -55,12 +55,40 @@ def test_artifact_crud():
     store.create_interface(project_id, l3, InterfaceCreate(name="POST /x", authentication="OAuth2"))
     store.create_dependency(project_id, l3, DependencyCreate(name="Ledger", dependency_type="container"))
     store.create_concern(project_id, l3, ConcernCreate(name="Validation", category="validation"))
+    view = store.create_behavior_view(project_id, l3, BehaviorViewCreate(
+        name="Checkout sequence", view_type="sequence_flow", mermaid_source="sequenceDiagram\n A->>B: submit"
+    ))
     assert len(store.list_components(l3)) == 1
     assert len(store.list_interfaces(l3)) == 1
     assert len(store.list_dependencies(l3)) == 1
     assert len(store.list_concerns(l3)) == 1
+    assert len(store.list_behavior_views(l3)) == 1
     store.delete_component(project_id, c["id"])
     assert store.list_components(l3) == []
+    store.delete_behavior_view(project_id, view["id"])
+    assert store.list_behavior_views(l3) == []
+
+
+def test_behavior_view_api_round_trip():
+    project_id, _, l3 = _scope()
+    path = f"/projects/{project_id}/l3/{l3}/arch/behavior-views"
+    headers = {"X-User-Role": "admin"}
+    with TestClient(app) as client:
+        created = client.post(path, headers=headers, json={
+            "name": "Customer journey",
+            "view_type": "user_journey",
+            "description": "Customer submits and confirms payment",
+        })
+        assert created.status_code == 200
+        item = created.json()
+        updated = client.patch(f"{path}/{item['id']}", headers=headers, json={"status": "reviewed"})
+        assert updated.status_code == 200
+        assert updated.json()["status"] == "reviewed"
+        workspace = client.get(f"/projects/{project_id}/l3/{l3}/arch", headers=headers)
+        assert workspace.status_code == 200
+        assert workspace.json()["behavior_views"][0]["name"] == "Customer journey"
+        deleted = client.delete(f"{path}/{item['id']}", headers=headers)
+        assert deleted.status_code == 200
 
 
 def test_readiness_progression_and_weights():
@@ -71,9 +99,12 @@ def test_readiness_progression_and_weights():
     store.create_interface(project_id, l3, InterfaceCreate(name="POST /x", authentication="OAuth2"))
     store.create_dependency(project_id, l3, DependencyCreate(name="Ledger"))
     store.create_concern(project_id, l3, ConcernCreate(name="Sec", category="security"))
+    store.create_behavior_view(project_id, l3, BehaviorViewCreate(name="Journey", view_type="user_journey"))
+    store.create_behavior_view(project_id, l3, BehaviorViewCreate(name="Data model", view_type="erd"))
+    store.create_behavior_view(project_id, l3, BehaviorViewCreate(name="Acceptance", view_type="test_scenario"))
     result = service.readiness(project_id, l3)
     assert result["score"] >= 80
-    assert len(result["areas"]) == 9
+    assert len(result["areas"]) == 10
     assert sum(a["weight"] for a in result["areas"]) == 100
     assert isinstance(result["gaps"], list)
 
@@ -81,10 +112,15 @@ def test_readiness_progression_and_weights():
 def test_engineering_summary_markdown_mermaid():
     project_id, _, l3 = _scope()
     store.create_component(project_id, l3, ComponentCreate(name="Controller", component_type="controller"))
+    store.create_behavior_view(project_id, l3, BehaviorViewCreate(
+        name="Runtime sequence", view_type="sequence_flow", mermaid_source="sequenceDiagram\n A->>B: call"
+    ))
     es = service.engineering_summary(project_id, l3)
     assert es["markdown"].startswith("# pay-api")
     assert "```mermaid" in es["markdown"]
     assert "## Interfaces & Contracts" in es["markdown"]
+    assert "## Behavioral Models" in es["markdown"]
+    assert "Runtime sequence" in es["markdown"]
 
 
 def test_sequential_approval_baselines_l3():
@@ -131,6 +167,7 @@ async def test_ai_generate_and_apply_l3():
     assert result["components"] == len(draft.components)
     assert store.get_l3(project_id, l3)["component_diagram"] == draft.component_diagram
     assert len(store.list_interfaces(l3)) == len(draft.interfaces)
+    assert len(store.list_behavior_views(l3)) == len(draft.behavior_views)
 
 
 def test_ai_apply_bad_element_returns_4xx_not_500():

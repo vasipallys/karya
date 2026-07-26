@@ -12,6 +12,8 @@ from backend.l4arch.models import (
     ChecklistUpdate,
     CodeUnitCreate,
     CodeUnitUpdate,
+    DeliveryAssetCreate,
+    DeliveryAssetUpdate,
     L4Update,
     TestCaseCreate,
     TestCaseUpdate,
@@ -102,4 +104,21 @@ async def update_checklist_item(project_id: str, l4_element_id: str, item_id: st
 @router.delete("/checklist/{item_id}")
 async def delete_checklist_item(project_id: str, l4_element_id: str, item_id: str) -> dict[str, str]:
     _run(lambda: store.delete_checklist_item(project_id, item_id))
+    return {"status": "deleted"}
+
+
+# ---- delivery/change assets ----
+@router.post("/delivery-assets")
+async def create_delivery_asset(project_id: str, l4_element_id: str, payload: DeliveryAssetCreate) -> dict[str, Any]:
+    return _run(lambda: store.create_delivery_asset(project_id, l4_element_id, payload))
+
+
+@router.patch("/delivery-assets/{item_id}")
+async def update_delivery_asset(project_id: str, l4_element_id: str, item_id: str, payload: DeliveryAssetUpdate) -> dict[str, Any]:
+    return _run(lambda: store.update_delivery_asset(project_id, item_id, payload))
+
+
+@router.delete("/delivery-assets/{item_id}")
+async def delete_delivery_asset(project_id: str, l4_element_id: str, item_id: str) -> dict[str, str]:
+    _run(lambda: store.delete_delivery_asset(project_id, item_id))
     return {"status": "deleted"}

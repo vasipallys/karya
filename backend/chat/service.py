@@ -24,6 +24,9 @@ from backend.l1arch import store as l1_store
 from backend.l2arch import store as l2_store
 from backend.l3arch import store as l3_store
 from backend.l4arch import store as l4_store
+from backend.planning import store as planning_store
+from backend.planning.models import AgileUnitCreate, AgileUnitUpdate, TeamMemberCreate, TeamMemberUpdate
+from backend.resources import store as resources_store
 from backend.workflow import service as workflow_service
 
 _READINESS = {"L1": l1_service.readiness, "L2": l2_service.readiness, "L3": l3_service.readiness, "L4": l4_service.readiness}
@@ -60,6 +63,109 @@ def _find(project_id: str, name: str) -> dict[str, Any]:
 def _norm_level(level: str) -> str:
     lvl = (level or "").strip().upper()
     return lvl if lvl in _LEVELS else ""
+
+
+def _norm_key(value: str) -> str:
+    import re
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _resolve_l1_scope(project_id: str, scope: str) -> dict[str, Any]:
+    """Resolve the L1 that owns an operating plan without guessing."""
+    candidates = [
+        element for element in _elements(project_id)
+        if element["level"] == "L1"
+        and "person" not in str(element.get("kind") or "").lower()
+        and "external" not in str(element.get("kind") or "").lower()
+    ]
+    if scope.strip():
+        key = _norm_key(scope)
+        exact = [element for element in candidates if _norm_key(element["name"]) == key]
+        if not exact:
+            # Users often append/remove "system", "platform", or "initiative".
+            def without_suffix(value: str) -> str:
+                normalized = _norm_key(value)
+                for suffix in ("system", "platform", "initiative"):
+                    if normalized.endswith(suffix):
+                        normalized = normalized[:-len(suffix)]
+                        break
+                return normalized
+
+            exact = [
+                element for element in candidates
+                if without_suffix(element["name"]) == without_suffix(scope)
+            ]
+        if len(exact) == 1:
+            return exact[0]
+        if not exact:
+            raise ChatError(f"I couldn't find an L1 operating plan for “{scope}”.")
+        raise ChatError(f"“{scope}” matches multiple L1 plans. Please use the exact initiative name.")
+    if not candidates:
+        raise ChatError("Create an L1 initiative before adding tribes or squads.")
+    if len(candidates) > 1:
+        names = ", ".join(element["name"] for element in candidates[:6])
+        raise ChatError(f"Which L1 operating plan should I use? Options: {names}.")
+    return candidates[0]
+
+
+def _planning_units(project_id: str) -> list[dict[str, Any]]:
+    units: list[dict[str, Any]] = []
+    for l1 in [element for element in _elements(project_id) if element["level"] == "L1"]:
+        plan = planning_store.get_plan(project_id, l1["id"])
+        for unit in plan["units"]:
+            units.append({**unit, "l1_name": l1["name"], "l1_element_id": l1["id"]})
+    return units
+
+
+def _find_unit(
+    project_id: str,
+    name: str,
+    scope: str = "",
+    unit_type: str = "",
+) -> dict[str, Any]:
+    if not name.strip():
+        raise ChatError("Which tribe or squad? Please name it.")
+    units = _planning_units(project_id)
+    if scope.strip():
+        l1 = _resolve_l1_scope(project_id, scope)
+        units = [unit for unit in units if unit["l1_element_id"] == l1["id"]]
+    if unit_type in {"tribe", "squad"}:
+        units = [unit for unit in units if unit["unit_type"] == unit_type]
+    key = _norm_key(name)
+    matches = [unit for unit in units if _norm_key(unit["name"]) == key]
+    if not matches:
+        near = [unit["name"] for unit in units if key and (key in _norm_key(unit["name"]) or _norm_key(unit["name"]) in key)]
+        hint = f" Did you mean: {', '.join(near[:5])}?" if near else ""
+        raise ChatError(f"I couldn't find a tribe or squad named “{name}”.{hint}")
+    if len(matches) > 1:
+        plans = ", ".join(f"{unit['name']} ({unit['l1_name']})" for unit in matches[:6])
+        raise ChatError(f"“{name}” exists in multiple L1 plans. Specify the initiative: {plans}.")
+    return matches[0]
+
+
+def _resolve_resource(name: str) -> dict[str, Any] | None:
+    key = _norm_key(name)
+    exact = [
+        person for person in resources_store.list_staff()
+        if _norm_key(str(person.get("staff_name") or "")) == key
+        or _norm_key(str(person.get("staff_code") or "")) == key
+    ]
+    if len(exact) > 1:
+        raise ChatError(f"Multiple people match “{name}”. Use the staff code.")
+    return exact[0] if exact else None
+
+
+def _find_member(unit: dict[str, Any], name: str) -> dict[str, Any]:
+    key = _norm_key(name)
+    matches = [
+        member for member in unit.get("members", [])
+        if _norm_key(str(member.get("name") or "")) == key
+    ]
+    if not matches:
+        raise ChatError(f"I couldn't find “{name}” in {unit['unit_type']} “{unit['name']}”.")
+    if len(matches) > 1:
+        raise ChatError(f"Multiple team members are named “{name}” in “{unit['name']}”.")
+    return matches[0]
 
 
 def _resolve_parent(project_id: str, level: str, parent_name: str) -> dict[str, Any] | None:
@@ -104,12 +210,18 @@ def dispatch(project_id: str, command: ChatCommand) -> dict[str, Any]:
         return _readiness(project_id, command)
     if action == "report":
         return _report(project_id, command)
+    if action == "list_agile_units":
+        return _list_agile_units(project_id, command)
     if action == "web_search":
         return _web_search(command)
     if action in ("answer", "code", "image", "document"):
         return {"reply": command.reply or "I need a little more detail to answer that.", "action": action,
                 "data": None, "mutation": None}
-    if action in ("create_element", "update_element", "delete_element", "create_relation"):
+    if action in (
+        "create_element", "update_element", "delete_element", "create_relation",
+        "create_agile_unit", "update_agile_unit", "delete_agile_unit",
+        "assign_team_member", "update_team_member", "remove_team_member",
+    ):
         return _propose(project_id, command)
     return {"reply": command.reply or _help_text(), "action": "help", "data": None, "mutation": None}
 
@@ -156,6 +268,8 @@ def _web_search(command: ChatCommand) -> dict[str, Any]:
 def _help_text() -> str:
     return (
         "I can help across the whole model. Try:\n"
+        "• “create a tribe for this initiative” or “create Checkout Squad under Growth Tribe”\n"
+        "• “add Priya to Checkout Squad as QA at 50%” or “list tribes and squads”\n"
         "• “what's the project status?” or “what should I do next?”\n"
         "• “list L2 containers” · “readiness of onboarding-web”\n"
         "• “create an L2 container called payments under Digital banking”\n"
@@ -189,6 +303,36 @@ def _list(project_id: str, command: ChatCommand) -> dict[str, Any]:
     reply = (f"You have {len(rows)} {label}element(s) at {scope}." if rows
              else f"No {label}elements found at {scope}.")
     return {"reply": reply, "action": "list", "data": {"level": level, "status": wanted, "items": rows}, "mutation": None}
+
+
+def _list_agile_units(project_id: str, command: ChatCommand) -> dict[str, Any]:
+    units = _planning_units(project_id)
+    scope_name = ""
+    if command.scope.strip():
+        l1 = _resolve_l1_scope(project_id, command.scope)
+        scope_name = l1["name"]
+        units = [unit for unit in units if unit["l1_element_id"] == l1["id"]]
+    unit_type = command.unit_type.strip().lower()
+    if unit_type in {"tribe", "squad"}:
+        units = [unit for unit in units if unit["unit_type"] == unit_type]
+    rows = [{
+        "id": unit["id"],
+        "name": unit["name"],
+        "unit_type": unit["unit_type"],
+        "l1_name": unit["l1_name"],
+        "parent_unit_id": unit.get("parent_unit_id"),
+        "lead_name": unit.get("lead_name") or "",
+        "members": len(unit.get("members") or []),
+    } for unit in units]
+    noun = f"{unit_type}s" if unit_type else "tribes and squads"
+    where = f" in **{scope_name}**" if scope_name else ""
+    reply = f"Found **{len(rows)}** {noun}{where}."
+    return {
+        "reply": reply,
+        "action": "list_agile_units",
+        "data": {"scope": scope_name, "unit_type": unit_type, "items": rows},
+        "mutation": None,
+    }
 
 
 def _describe(project_id: str, command: ChatCommand) -> dict[str, Any]:
@@ -328,7 +472,146 @@ def _report(project_id: str, command: ChatCommand) -> dict[str, Any]:
 # ---- write proposals ----------------------------------------------------
 
 def _propose(project_id: str, command: ChatCommand) -> dict[str, Any]:
-    if command.action == "create_element":
+    if command.action == "create_agile_unit":
+        unit_type = command.unit_type.strip().lower()
+        if unit_type not in {"tribe", "squad"}:
+            raise ChatError("Should I create a tribe or a squad?")
+        if not command.name.strip():
+            raise ChatError(f"What should the new {unit_type} be called?")
+        l1 = _resolve_l1_scope(project_id, command.scope)
+        existing = [
+            unit for unit in _planning_units(project_id)
+            if unit["l1_element_id"] == l1["id"]
+            and unit["unit_type"] == unit_type
+            and _norm_key(unit["name"]) == _norm_key(command.name)
+        ]
+        if existing:
+            raise ChatError(f"A {unit_type} named “{existing[0]['name']}” already exists in {l1['name']}.")
+        parent = None
+        if unit_type == "squad":
+            if command.parent.strip():
+                parent = _find_unit(project_id, command.parent, l1["name"], "tribe")
+            else:
+                tribes = [
+                    unit for unit in _planning_units(project_id)
+                    if unit["l1_element_id"] == l1["id"] and unit["unit_type"] == "tribe"
+                ]
+                if len(tribes) == 1:
+                    parent = tribes[0]
+                elif len(tribes) > 1:
+                    names = ", ".join(unit["name"] for unit in tribes[:6])
+                    raise ChatError(f"Which tribe should own this squad? Options: {names}.")
+        summary = f"Create {unit_type} “{command.name.strip()}” in “{l1['name']}”"
+        if parent:
+            summary += f" under “{parent['name']}”"
+        mutation = {
+            "action": "create_agile_unit",
+            "scope": l1["name"],
+            "unit_type": unit_type,
+            "name": command.name.strip(),
+            "parent": parent["name"] if parent else "",
+            "mission": command.description.strip(),
+            "lead_name": command.lead_name.strip(),
+            "capacity_fte": command.capacity_fte if command.capacity_fte is not None else 0,
+            "target_velocity": command.target_velocity if command.target_velocity is not None else 0,
+        }
+    elif command.action == "update_agile_unit":
+        unit = _find_unit(project_id, command.name, command.scope, command.unit_type)
+        changes = []
+        if command.new_name.strip():
+            changes.append(f"rename to “{command.new_name.strip()}”")
+        if command.description.strip():
+            changes.append("update mission")
+        if command.lead_name.strip():
+            changes.append(f"set lead to {command.lead_name.strip()}")
+        if command.capacity_fte is not None:
+            changes.append(f"set capacity to {command.capacity_fte:g} FTE")
+        if command.target_velocity is not None:
+            changes.append(f"set target velocity to {command.target_velocity:g}")
+        if not changes:
+            raise ChatError("What should I change on that tribe or squad?")
+        summary = f"Update {unit['unit_type']} “{unit['name']}”: " + "; ".join(changes)
+        mutation = {
+            "action": "update_agile_unit",
+            "scope": unit["l1_name"],
+            "unit_type": unit["unit_type"],
+            "name": unit["name"],
+            "new_name": command.new_name.strip(),
+            "mission": command.description.strip(),
+            "lead_name": command.lead_name.strip(),
+            "capacity_fte": command.capacity_fte,
+            "target_velocity": command.target_velocity,
+        }
+    elif command.action == "delete_agile_unit":
+        unit = _find_unit(project_id, command.name, command.scope, command.unit_type)
+        impact = " Its squads become independent and its members are removed." if unit["unit_type"] == "tribe" else " Its members are removed."
+        summary = f"Delete {unit['unit_type']} “{unit['name']}” from “{unit['l1_name']}”.{impact}"
+        mutation = {
+            "action": "delete_agile_unit",
+            "scope": unit["l1_name"],
+            "unit_type": unit["unit_type"],
+            "name": unit["name"],
+        }
+    elif command.action == "assign_team_member":
+        unit = _find_unit(project_id, command.parent, command.scope)
+        if not command.name.strip():
+            raise ChatError("Who should I add to the team?")
+        person = _resolve_resource(command.name)
+        display_name = str(person.get("staff_name")) if person else command.name.strip()
+        allocation = command.allocation_percent if command.allocation_percent is not None else 100
+        directory_note = "" if person else " as an unlinked external/contract team member"
+        summary = (
+            f"Add {display_name} to {unit['unit_type']} “{unit['name']}” at "
+            f"{allocation:g}% allocation{directory_note}"
+        )
+        if command.role.strip():
+            summary += f" as {command.role.strip()}"
+        mutation = {
+            "action": "assign_team_member",
+            "scope": unit["l1_name"],
+            "unit_type": unit["unit_type"],
+            "unit": unit["name"],
+            "name": display_name,
+            "resource_staff_id": person["id"] if person else None,
+            "role": command.role.strip(),
+            "allocation_percent": allocation,
+            "monthly_cost": command.monthly_cost if command.monthly_cost is not None else 0,
+        }
+    elif command.action == "update_team_member":
+        unit = _find_unit(project_id, command.parent, command.scope)
+        member = _find_member(unit, command.name)
+        changes = []
+        if command.role.strip():
+            changes.append(f"set role to {command.role.strip()}")
+        if command.allocation_percent is not None:
+            changes.append(f"set allocation to {command.allocation_percent:g}%")
+        if command.monthly_cost is not None:
+            changes.append(f"set monthly cost to {command.monthly_cost:g}")
+        if not changes:
+            raise ChatError("What should I change for that team member?")
+        summary = f"Update {member['name']} in “{unit['name']}”: " + "; ".join(changes)
+        mutation = {
+            "action": "update_team_member",
+            "scope": unit["l1_name"],
+            "unit_type": unit["unit_type"],
+            "unit": unit["name"],
+            "name": member["name"],
+            "role": command.role.strip(),
+            "allocation_percent": command.allocation_percent,
+            "monthly_cost": command.monthly_cost,
+        }
+    elif command.action == "remove_team_member":
+        unit = _find_unit(project_id, command.parent, command.scope)
+        member = _find_member(unit, command.name)
+        summary = f"Remove {member['name']} from {unit['unit_type']} “{unit['name']}”"
+        mutation = {
+            "action": "remove_team_member",
+            "scope": unit["l1_name"],
+            "unit_type": unit["unit_type"],
+            "unit": unit["name"],
+            "name": member["name"],
+        }
+    elif command.action == "create_element":
         level = _norm_level(command.level)
         if not level:
             raise ChatError("Which level (L1–L4) should I create?")
@@ -378,6 +661,146 @@ def _propose(project_id: str, command: ChatCommand) -> dict[str, Any]:
 
 def apply(project_id: str, mutation: dict[str, Any]) -> dict[str, Any]:
     action = mutation.get("action")
+    if action == "create_agile_unit":
+        unit_type = str(mutation.get("unit_type") or "").lower()
+        if unit_type not in {"tribe", "squad"}:
+            raise ChatError("Invalid agile unit type.")
+        name = str(mutation.get("name") or "").strip()
+        if not name:
+            raise ChatError("The tribe or squad name is required.")
+        l1 = _resolve_l1_scope(project_id, str(mutation.get("scope") or ""))
+        if any(
+            unit["l1_element_id"] == l1["id"]
+            and unit["unit_type"] == unit_type
+            and _norm_key(unit["name"]) == _norm_key(name)
+            for unit in _planning_units(project_id)
+        ):
+            raise ChatError(f"A {unit_type} named “{name}” already exists in {l1['name']}.")
+        parent = None
+        if unit_type == "squad" and str(mutation.get("parent") or "").strip():
+            parent = _find_unit(project_id, str(mutation["parent"]), l1["name"], "tribe")
+        unit = planning_store.create_unit(project_id, l1["id"], AgileUnitCreate(
+            unit_type=unit_type,
+            name=name,
+            parent_unit_id=parent["id"] if parent else None,
+            mission=str(mutation.get("mission") or ""),
+            lead_name=str(mutation.get("lead_name") or ""),
+            capacity_fte=float(mutation.get("capacity_fte") or 0),
+            target_velocity=float(mutation.get("target_velocity") or 0),
+        ))
+        return {
+            "reply": f"Created {unit_type} “{unit['name']}” in “{l1['name']}”.",
+            "result": {
+                "id": unit["id"], "name": unit["name"], "unit_type": unit_type,
+                "workspace": "planning", "l1_id": l1["id"],
+            },
+        }
+    if action == "update_agile_unit":
+        unit = _find_unit(
+            project_id,
+            str(mutation.get("name") or ""),
+            str(mutation.get("scope") or ""),
+            str(mutation.get("unit_type") or ""),
+        )
+        values: dict[str, Any] = {}
+        if str(mutation.get("new_name") or "").strip():
+            values["name"] = str(mutation["new_name"]).strip()
+        if str(mutation.get("mission") or "").strip():
+            values["mission"] = str(mutation["mission"]).strip()
+        if str(mutation.get("lead_name") or "").strip():
+            values["lead_name"] = str(mutation["lead_name"]).strip()
+        if mutation.get("capacity_fte") is not None:
+            values["capacity_fte"] = float(mutation["capacity_fte"])
+        if mutation.get("target_velocity") is not None:
+            values["target_velocity"] = float(mutation["target_velocity"])
+        if not values:
+            raise ChatError("No tribe or squad changes were supplied.")
+        updated = planning_store.update_unit(project_id, unit["id"], AgileUnitUpdate(**values))
+        return {
+            "reply": f"Updated {unit['unit_type']} “{updated['name']}”.",
+            "result": {
+                "id": updated["id"], "name": updated["name"], "unit_type": unit["unit_type"],
+                "workspace": "planning", "l1_id": unit["l1_element_id"],
+            },
+        }
+    if action == "delete_agile_unit":
+        unit = _find_unit(
+            project_id,
+            str(mutation.get("name") or ""),
+            str(mutation.get("scope") or ""),
+            str(mutation.get("unit_type") or ""),
+        )
+        planning_store.delete_unit(project_id, unit["id"])
+        return {
+            "reply": f"Deleted {unit['unit_type']} “{unit['name']}”.",
+            "result": {"id": unit["id"], "name": unit["name"], "unit_type": unit["unit_type"]},
+        }
+    if action == "assign_team_member":
+        unit = _find_unit(
+            project_id,
+            str(mutation.get("unit") or ""),
+            str(mutation.get("scope") or ""),
+            str(mutation.get("unit_type") or ""),
+        )
+        name = str(mutation.get("name") or "").strip()
+        if not name:
+            raise ChatError("The team member name is required.")
+        person = _resolve_resource(name)
+        member = planning_store.create_member(project_id, unit["id"], TeamMemberCreate(
+            name=str(person.get("staff_name")) if person else name,
+            resource_staff_id=person["id"] if person else None,
+            role=str(mutation.get("role") or ""),
+            allocation_percent=float(mutation.get("allocation_percent", 100)),
+            monthly_cost=float(mutation.get("monthly_cost") or 0),
+        ))
+        return {
+            "reply": f"Added {member['name']} to {unit['unit_type']} “{unit['name']}”.",
+            "result": {
+                "id": member["id"], "name": member["name"], "unit_type": unit["unit_type"],
+                "unit_name": unit["name"], "workspace": "planning", "l1_id": unit["l1_element_id"],
+            },
+        }
+    if action == "update_team_member":
+        unit = _find_unit(
+            project_id,
+            str(mutation.get("unit") or ""),
+            str(mutation.get("scope") or ""),
+            str(mutation.get("unit_type") or ""),
+        )
+        member = _find_member(unit, str(mutation.get("name") or ""))
+        values: dict[str, Any] = {}
+        if str(mutation.get("role") or "").strip():
+            values["role"] = str(mutation["role"]).strip()
+        if mutation.get("allocation_percent") is not None:
+            values["allocation_percent"] = float(mutation["allocation_percent"])
+        if mutation.get("monthly_cost") is not None:
+            values["monthly_cost"] = float(mutation["monthly_cost"])
+        if not values:
+            raise ChatError("No team-member changes were supplied.")
+        updated = planning_store.update_member(project_id, member["id"], TeamMemberUpdate(**values))
+        return {
+            "reply": f"Updated {updated['name']} in “{unit['name']}”.",
+            "result": {
+                "id": updated["id"], "name": updated["name"], "unit_type": unit["unit_type"],
+                "unit_name": unit["name"], "workspace": "planning", "l1_id": unit["l1_element_id"],
+            },
+        }
+    if action == "remove_team_member":
+        unit = _find_unit(
+            project_id,
+            str(mutation.get("unit") or ""),
+            str(mutation.get("scope") or ""),
+            str(mutation.get("unit_type") or ""),
+        )
+        member = _find_member(unit, str(mutation.get("name") or ""))
+        planning_store.delete_member(project_id, member["id"])
+        return {
+            "reply": f"Removed {member['name']} from “{unit['name']}”.",
+            "result": {
+                "id": member["id"], "name": member["name"], "unit_type": unit["unit_type"],
+                "unit_name": unit["name"], "workspace": "planning", "l1_id": unit["l1_element_id"],
+            },
+        }
     if action == "create_element":
         parent = _resolve_parent(project_id, mutation["level"], mutation.get("parent", ""))
         target = _find(project_id, mutation["target"]) if mutation.get("target") else None

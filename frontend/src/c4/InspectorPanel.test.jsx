@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { expect, test, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, expect, test, vi } from 'vitest'
 import { api } from '../api/client'
 import InspectorPanel from './InspectorPanel'
 
@@ -11,7 +11,9 @@ vi.mock('../api/client', () => ({
   },
 }))
 
-test('shows the L1 plan summary and opens more details on demand', async () => {
+afterEach(() => cleanup())
+
+test('shows the L1 plan summary and opens its workspace on demand', async () => {
   api.l1Plan.mockResolvedValue({
     settings: { currency_code: 'USD' },
     metrics: {
@@ -25,13 +27,14 @@ test('shows the L1 plan summary and opens more details on demand', async () => {
     work_items: [{ id: 'work-1' }, { id: 'work-2' }],
     diagrams: [{ id: 'diagram-1' }],
   })
-  const onOpenL1Plan = vi.fn()
+  const onOpenWorkspace = vi.fn()
+  const element = { id: 'l1-1', level: 'L1', name: 'Digital servicing', description: 'Transform servicing', status: 'active', artifacts: [] }
 
   render(<InspectorPanel
     projectId="project-1"
-    element={{ id: 'l1-1', level: 'L1', name: 'Digital servicing', description: 'Transform servicing', status: 'active', artifacts: [] }}
+    element={element}
     config={{ jira_write_enabled: false }}
-    onOpenL1Plan={onOpenL1Plan}
+    onOpenWorkspace={onOpenWorkspace}
     onChanged={vi.fn()}
     onDeleted={vi.fn()} />)
 
@@ -39,6 +42,27 @@ test('shows the L1 plan summary and opens more details on demand', async () => {
   await waitFor(() => expect(summary).toHaveTextContent('2 squads · 9 people'))
   expect(summary).toHaveTextContent('2 work packages · 1 at risk · 8.5 allocated FTE')
   expect(summary).toHaveTextContent('1 technical views')
-  fireEvent.click(screen.getByRole('button', { name: 'More details' }))
-  expect(onOpenL1Plan).toHaveBeenCalledWith('l1-1')
+  fireEvent.click(screen.getByRole('button', { name: 'Open L1 plan' }))
+  expect(onOpenWorkspace).toHaveBeenCalledWith(element)
+})
+
+test.each([
+  ['L2', 'L2 architecture'],
+  ['L3', 'L3 architecture'],
+  ['L4', 'L4 details'],
+])('links a selected %s element to its owning workspace', (level, workspaceName) => {
+  const onOpenWorkspace = vi.fn()
+  const element = { id: `${level.toLowerCase()}-1`, level, name: `${level} element`, description: '', status: 'active', artifacts: [] }
+
+  render(<InspectorPanel
+    projectId="project-1"
+    element={element}
+    config={{ jira_write_enabled: false }}
+    onOpenWorkspace={onOpenWorkspace}
+    onChanged={vi.fn()}
+    onDeleted={vi.fn()} />)
+
+  expect(screen.getByRole('region', { name: `${workspaceName} link` })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Open workspace' }))
+  expect(onOpenWorkspace).toHaveBeenCalledWith(element)
 })

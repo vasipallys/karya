@@ -55,6 +55,65 @@ describe('HomeInbox', () => {
     expect(onNavigate).toHaveBeenCalledWith({ kind: 'project', id: 'p1', tab: 'planning' })
   })
 
+  it.each([
+    ['Open tasks', 'work'],
+    ['Actions pending', 'actions'],
+    ['At risk', 'at_risk'],
+    ['Overdue', 'overdue'],
+  ])('opens a real focused page from the %s metric', async (label, view) => {
+    api.homeInbox.mockResolvedValue(dashboard)
+    const onNavigate = vi.fn()
+    render(<HomeInbox onNavigate={onNavigate} />)
+
+    const tile = await screen.findByTitle(
+      label === 'Open tasks' ? 'Open your tasks'
+        : label === 'Actions pending' ? 'Open pending actions'
+          : label === 'At risk' ? 'Open at-risk work' : 'Open overdue work',
+    )
+    fireEvent.click(tile)
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'inbox', view })
+  })
+
+  it('renders the focused pending-actions page and preserves row navigation', async () => {
+    api.homeInbox.mockResolvedValue(dashboard)
+    const onNavigate = vi.fn()
+    const onBack = vi.fn()
+    render(<HomeInbox view="actions" onNavigate={onNavigate} onBack={onBack} />)
+
+    expect(await screen.findByRole('heading', { name: 'Actions pending', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Cut latency')).toBeInTheDocument()
+    expect(screen.queryByText('Payout API')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Cut latency'))
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'project', id: 'p1', tab: 'planning' })
+    fireEvent.click(screen.getByRole('button', { name: /Back to Platforms/ }))
+    expect(onBack).toHaveBeenCalled()
+  })
+
+  it('opens complete task and action views from the panel headers', async () => {
+    api.homeInbox.mockResolvedValue(dashboard)
+    const onNavigate = vi.fn()
+    render(<HomeInbox onNavigate={onNavigate} />)
+
+    const links = await screen.findAllByRole('button', { name: /View all/ })
+    fireEvent.click(links[0])
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'inbox', view: 'tasks' })
+    fireEvent.click(links[1])
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'inbox', view: 'actions' })
+  })
+
+  it('filters at-risk and overdue detail pages correctly', async () => {
+    api.homeInbox.mockResolvedValue(dashboard)
+    const { rerender } = render(<HomeInbox view="at_risk" onNavigate={vi.fn()} onBack={vi.fn()} />)
+    expect(await screen.findByRole('heading', { name: 'At-risk work', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Build refund')).toBeInTheDocument()
+    expect(screen.queryByText('Payout API')).not.toBeInTheDocument()
+
+    rerender(<HomeInbox view="overdue" onNavigate={vi.fn()} onBack={vi.fn()} />)
+    expect(await screen.findByRole('heading', { name: 'Overdue work', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Payout API')).toBeInTheDocument()
+    expect(screen.queryByText('Build refund')).not.toBeInTheDocument()
+  })
+
   it('deep-links the Squads tile to reporting when the user may see it', async () => {
     api.homeInbox.mockResolvedValue(dashboard)
     const onNavigate = vi.fn()

@@ -7,6 +7,7 @@ import AskAiDialog from './components/AskAiDialog'
 import { resolveAiDestination } from './components/askAiRouting'
 import { useToast } from './ui/Toast'
 import AdminConsole from './screens/AdminConsole'
+import HomeInbox from './screens/HomeInbox'
 import Login from './screens/Login'
 import NewProjectWizard from './screens/NewProjectWizard'
 import ProjectsHome from './screens/ProjectsHome'
@@ -84,7 +85,9 @@ export default function App() {
   // Deep links from the home dashboard into the right module.
   const handleHomeNavigate = (target) => {
     if (!target) return
-    if (target.kind === 'project') {
+    if (target.kind === 'inbox') {
+      setRoute({ name: 'inbox', view: target.view || 'actions' })
+    } else if (target.kind === 'project') {
       if (!showWorkspace) { toast.info('You do not have access to project workspaces.'); return }
       setWorkspaceTab(target.tab ? { id: target.tab } : null)
       setRoute({ name: 'project', id: target.id })
@@ -114,7 +117,7 @@ export default function App() {
         <span style={{ textAlign: 'left' }}><strong>Karya</strong><small>C4 workspace · evidence-led estimation</small></span>
       </button>
       <nav className="m3-topbar-nav">
-        {showPlatforms && <button className={route.name === 'home' || route.name === 'project' || route.name === 'wizard' ? 'active' : ''} onClick={() => go('home')}>Platforms</button>}
+        {showPlatforms && <button className={route.name === 'home' || route.name === 'inbox' || route.name === 'project' || route.name === 'wizard' ? 'active' : ''} onClick={() => go('home')}>Platforms</button>}
         {showAdmin && <button className={route.name === 'admin' ? 'active' : ''} onClick={() => go('admin')}><ShieldCheck size={14} /> Admin</button>}
         {showAskAi && <button onClick={() => setAskAi(true)} title="Route a request to the right AI agent"><Sparkles size={14} /> Ask AI</button>}
         {showGuide && <a className="m3-topbar-link" href="/help/guide.html?v=20260722" target="_blank" rel="noreferrer" title="Open the interactive user guide in a new tab"><BookOpen size={14} /> Guide</a>}
@@ -139,6 +142,11 @@ export default function App() {
           onOpen={(id) => { if (!showWorkspace) { toast.info('You do not have access to project workspaces.'); return }; setWorkspaceTab(null); setRoute({ name: 'project', id }) }}
           onNavigate={handleHomeNavigate}
           onNew={(seed = 'blank') => setRoute({ name: 'wizard', seed })} />
+          : <div className="m3-banner error">You don't have access to the Platforms page.</div>)}
+        {route.name === 'inbox' && (showPlatforms ? <HomeInbox
+          view={route.view}
+          onBack={() => go('home')}
+          onNavigate={handleHomeNavigate} />
           : <div className="m3-banner error">You don't have access to the Platforms page.</div>)}
         {route.name === 'wizard' && showPlatforms && <NewProjectWizard config={config} initialSeed={route.seed}
           onDone={(id, notice) => { setWorkspaceTab(null); setRoute({ name: 'project', id, notice }) }}

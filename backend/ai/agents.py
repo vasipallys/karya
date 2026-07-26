@@ -10,7 +10,15 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.ai.masking import mask_pii
-from backend.ai.nl import classify_read, ground_status_target, is_write_intent, list_status_filter, match_relation, parse_create
+from backend.ai.nl import (
+    classify_read,
+    ground_status_target,
+    is_write_intent,
+    list_status_filter,
+    match_relation,
+    parse_create,
+    parse_operating_plan_intent,
+)
 from backend.ai.schemas import ChatCommand, C4Scaffold, FieldSummary, L1BaselineDraft, L2Draft, L3Draft, L4Draft, NarrativeOutput, OrchestratorPlan, StaffingProposal, StoryDecomposition
 from backend.c4 import store as c4_store
 from backend.graph.nodes import _parse_structured_result
@@ -310,7 +318,8 @@ _L3_SYSTEM = (
     "(with type — controller/service/repository/gateway/model/client — responsibilities, tech and design "
     "pattern), the provided/consumed interfaces (with contract + auth), the dependencies (internal/container/"
     "external/library), and the cross-cutting design concerns (logging, caching, validation, security, error "
-    "handling). Keep it implementable; mark unknowns rather than inventing systems."
+    "handling), plus behavior views covering a user journey or sequence flow, a BPMN or ERD view, and test "
+    "scenarios. Mermaid is preferred for portable views. Keep it implementable; mark unknowns rather than inventing systems."
 )
 
 
@@ -334,9 +343,9 @@ async def generate_l3_baseline(project_id: str, l3_element_id: str, brief: str) 
 
 def apply_l3_baseline(project_id: str, l3_element_id: str, draft: dict[str, Any], sections: list[str] | None = None) -> dict[str, Any]:
     from backend.l3arch import store as l3_store
-    from backend.l3arch.models import ComponentCreate, ConcernCreate, DependencyCreate, InterfaceCreate, L3Update
+    from backend.l3arch.models import BehaviorViewCreate, ComponentCreate, ConcernCreate, DependencyCreate, InterfaceCreate, L3Update
 
-    wanted = set(sections or ["summary", "components", "interfaces", "dependencies", "concerns"])
+    wanted = set(sections or ["summary", "components", "interfaces", "dependencies", "concerns", "behavior_views"])
     result: dict[str, int] = {}
     if "summary" in wanted and (draft.get("summary") or draft.get("component_diagram")):
         l3_store.update_l3(project_id, l3_element_id, L3Update(
@@ -359,6 +368,10 @@ def apply_l3_baseline(project_id: str, l3_element_id: str, draft: dict[str, Any]
         for item in draft.get("concerns", []):
             l3_store.create_concern(project_id, l3_element_id, ConcernCreate(**item))
         result["concerns"] = len(draft.get("concerns", []))
+    if "behavior_views" in wanted:
+        for item in draft.get("behavior_views", []):
+            l3_store.create_behavior_view(project_id, l3_element_id, BehaviorViewCreate(**item))
+        result["behavior_views"] = len(draft.get("behavior_views", []))
     return result
 
 
@@ -369,8 +382,9 @@ _L4_SYSTEM = (
     "implementation plan for one task.\n"
     "Produce: a short summary, a Mermaid class or sequence diagram, the code units (classes/interfaces/"
     "functions/modules with responsibility, tech and complexity), the test cases (unit/integration/e2e with a "
-    "scenario and expected result), and a Definition-of-Done checklist (code, tests, docs, security, review, "
-    "deploy). Keep it concrete and buildable; do not invent unrelated files."
+    "scenario and expected result), a Definition-of-Done checklist (code, tests, docs, security, review, deploy), "
+    "and delivery assets for CI, code review/PR, IaC, and the release package. Keep it concrete and buildable; "
+    "use planned placeholders when repository URLs are not known."
 )
 
 
@@ -394,9 +408,9 @@ async def generate_l4_baseline(project_id: str, l4_element_id: str, brief: str) 
 
 def apply_l4_baseline(project_id: str, l4_element_id: str, draft: dict[str, Any], sections: list[str] | None = None) -> dict[str, Any]:
     from backend.l4arch import store as l4_store
-    from backend.l4arch.models import ChecklistCreate, CodeUnitCreate, L4Update, TestCaseCreate
+    from backend.l4arch.models import ChecklistCreate, CodeUnitCreate, DeliveryAssetCreate, L4Update, TestCaseCreate
 
-    wanted = set(sections or ["summary", "code_units", "test_cases", "checklist"])
+    wanted = set(sections or ["summary", "code_units", "test_cases", "checklist", "delivery_assets"])
     result: dict[str, int] = {}
     if "summary" in wanted and (draft.get("summary") or draft.get("code_diagram")):
         l4_store.update_l4(project_id, l4_element_id, L4Update(
@@ -415,6 +429,10 @@ def apply_l4_baseline(project_id: str, l4_element_id: str, draft: dict[str, Any]
         for item in draft.get("checklist", []):
             l4_store.create_checklist_item(project_id, l4_element_id, ChecklistCreate(**item))
         result["checklist"] = len(draft.get("checklist", []))
+    if "delivery_assets" in wanted:
+        for item in draft.get("delivery_assets", []):
+            l4_store.create_delivery_asset(project_id, l4_element_id, DeliveryAssetCreate(**item))
+        result["delivery_assets"] = len(draft.get("delivery_assets", []))
     return result
 
 
@@ -438,6 +456,11 @@ async def orchestrate(request_text: str) -> OrchestratorPlan:
 # ---- Conversational assistant -------------------------------------------
 
 _CHAT_SYSTEM = (
+    "DOMAIN RULE: Karya contains both a C4 model and L1 operating plans. Tribes and squads are "
+    "delivery-organisation records inside an L1 operating plan; they are NEVER C4 L2/L3 elements. "
+    "Use list_agile_units/create_agile_unit/update_agile_unit/delete_agile_unit for them, and "
+    "assign_team_member/update_team_member/remove_team_member for team membership. For these actions, scope is the exact "
+    "owning L1 name, unit_type is tribe/squad, and parent is the parent tribe or target unit name.\n"
     "You are the Karya assistant. Interpret the user's message into ONE structured command over "
     "the project's C4 model (levels L1 initiative, L2 container, L3 component/story, L4 task).\n"
     "Actions: overview (project status/next step), list (elements at a level), describe (what a named element is "
@@ -481,8 +504,15 @@ _CHAT_SYSTEM = (
 # so free-form "how do I / what is X" answers are anchored to real capabilities.
 _PLATFORM_GUIDE = (
     "PLATFORM GUIDE:\n"
+    "L1 operating plans contain tribes, squads, people, work, cost, and diagrams. Tribes and squads are "
+    "delivery-organisation records, not C4 elements. "
     "Karya is an evidence-led story-point estimator and top-down architecture workspace for a C4 model "
-    "(L1 initiative → L2 container → L3 component/story → L4 task). Each level has an architecture workspace "
+    "(L1 initiative → L2 container → L3 component/story → L4 task). The level contract is: "
+    "L1 Value (Theme/Initiative: business goals, stakeholders, KPIs, system context); "
+    "L2 Structure (Epic: applications, services, containers, APIs, data stores, platform, cloud); "
+    "L3 Behavior (Feature/Story: user journeys, components, sequence flows, BPMN, ERD, test scenarios); "
+    "L4 Change (Task/Sub-task/PR: code, tests, CI, reviews, IaC, release package). "
+    "Each level has an architecture workspace "
     "with a readiness score, artifacts, governance sign-off, and an AI baseline generator. Story points use a "
     "modified Fibonacci scale (1/2/3/5/8/13) and roll up deterministically from L3 stories to epics and "
     "initiatives. The assistant can query the model (status, lists, readiness, roll-up) and propose changes "
@@ -513,13 +543,13 @@ def _project_snapshot(project_id: str, elements: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _resolve_screen(screen: dict[str, Any] | None, elements: list[dict[str, Any]]) -> tuple[str, str, str]:
-    """Turn the frontend's screen descriptor into (level, element_name, label).
+def _resolve_screen(screen: dict[str, Any] | None, elements: list[dict[str, Any]]) -> tuple[str, str, str, bool]:
+    """Turn the frontend's screen descriptor into level/name/label/domain context.
 
     The user's current tab and selected element are context, not commands — they
     only fill in a level/element the message leaves implicit."""
     if not screen:
-        return "", "", ""
+        return "", "", "", False
     level = str(screen.get("level") or "").strip().upper()
     if level not in {"L1", "L2", "L3", "L4"}:
         level = ""
@@ -528,7 +558,27 @@ def _resolve_screen(screen: dict[str, Any] | None, elements: list[dict[str, Any]
     eid = screen.get("element_id")
     if eid:
         element_name = next((str(e["name"]) for e in elements if e.get("id") == eid), "")
-    return level, element_name, label
+    return level, element_name, label, str(screen.get("tab") or "") == "planning"
+
+
+def _operating_plan_catalog(project_id: str, elements: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Load the small tribe/squad catalog used for safe intent resolution."""
+    units: list[dict[str, str]] = []
+    for element in elements:
+        if element.get("level") != "L1":
+            continue
+        try:
+            plan = planning_store.get_plan(project_id, element["id"])
+        except Exception:  # noqa: BLE001 - dispatch performs authoritative validation
+            continue
+        for unit in plan.get("units", []):
+            units.append({
+                "id": str(unit["id"]),
+                "name": str(unit["name"]),
+                "unit_type": str(unit["unit_type"]),
+                "l1_name": str(element["name"]),
+            })
+    return units
 
 
 def _apply_screen_defaults(command: ChatCommand, screen_level: str, screen_element: str) -> None:
@@ -549,7 +599,8 @@ async def interpret_chat(project_id: str, message: str, history: list[dict[str, 
     elements = c4_store.list_graph(project_id)["elements"]
     project_name = projects_store.get_project(project_id)["name"]
     listing = "\n".join(f"- {e['level']} · {e['name']} ({e['status']})" for e in elements[:100]) or "(no elements yet)"
-    screen_level, screen_element, screen_label = _resolve_screen(screen, elements)
+    screen_level, screen_element, screen_label, planning_screen = _resolve_screen(screen, elements)
+    operating_units = _operating_plan_catalog(project_id, elements)
     screen_line = ""
     if screen_level or screen_element or screen_label:
         parts = [f"view={screen_label}" if screen_label else "", f"level={screen_level}" if screen_level else "",
@@ -565,6 +616,12 @@ async def interpret_chat(project_id: str, message: str, history: list[dict[str, 
         f"PROJECT SNAPSHOT (deterministic, from the database):\n{_project_snapshot(project_id, elements)}\n\n"
         + screen_line
         + f"PROJECT ELEMENTS:\n{listing}\n\n"
+        + "OPERATING PLAN UNITS:\n"
+        + ("\n".join(
+            f"- {unit['unit_type']} · {unit['name']} (L1: {unit['l1_name']})"
+            for unit in operating_units
+        ) or "(no tribes or squads yet)")
+        + "\n\n"
         + (f"CONVERSATION SO FAR:\n{convo}\n\n" if convo else "")
         + (f"ATTACHED FILE CONTENT:\n{mask_pii(attachment_context)}\n\n" if attachment_context else "")
         + f"USER MESSAGE:\n{mask_pii(message.strip())}\n\n"
@@ -574,11 +631,24 @@ async def interpret_chat(project_id: str, message: str, history: list[dict[str, 
     # still used for writes and open-ended modes, but must not turn a scoped ask
     # such as "status of each L1 item" into a whole-project overview.
     names = [str(e["name"]) for e in elements]
+    l1_names = [str(e["name"]) for e in elements if e.get("level") == "L1"]
+    operating_intent = (
+        parse_operating_plan_intent(
+            message,
+            operating_units,
+            l1_names,
+            screen_element if planning_screen and screen_level == "L1" else "",
+        )
+        if mode == "auto"
+        else None
+    )
     status_scope = (ground_status_target(message, project_name, names)
                     if mode == "auto" and not is_write_intent(message) else None)
     read = (classify_read(message, names, screen_level, screen_element)
             if mode == "auto" and not is_write_intent(message) and not status_scope else None)
-    if status_scope and status_scope["kind"] == "unknown":
+    if operating_intent:
+        command = ChatCommand(**operating_intent)
+    elif status_scope and status_scope["kind"] == "unknown":
         suggestions = status_scope["suggestions"]
         hint = f" Did you mean **{suggestions[0]}**?" if suggestions else ""
         command = ChatCommand(

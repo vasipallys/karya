@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api/client'
 import C4Canvas from './C4Canvas'
@@ -20,7 +20,7 @@ vi.mock('@xyflow/react', () => ({
   </div>,
 }))
 
-vi.mock('./InspectorPanel', () => ({ default: () => <div>Inspector</div> }))
+vi.mock('./InspectorPanel', () => ({ default: ({ element }) => <div>Inspector: {element?.name || 'none'}</div> }))
 vi.mock('./EstimateDialog', () => ({ default: () => null }))
 
 describe('C4Canvas navigation', () => {
@@ -44,6 +44,24 @@ describe('C4Canvas navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'System landscape' }))
 
     expect(screen.getByText('Smart Banking')).toBeInTheDocument()
+  })
+
+  it('restores the full drill path and selection for a requested nested element', async () => {
+    api.c4Graph.mockResolvedValue({
+      elements: [
+        { id: 'l1-1', parent_id: null, level: 'L1', name: 'Banking', status: 'active', artifacts: [] },
+        { id: 'l2-1', parent_id: 'l1-1', level: 'L2', name: 'Payments', status: 'active', artifacts: [] },
+        { id: 'l3-1', parent_id: 'l2-1', level: 'L3', name: 'Payment orchestration', status: 'active', artifacts: [] },
+      ],
+      relations: [],
+    })
+
+    render(<C4Canvas projectId="project-1" config={{}} requestedElement={{ id: 'l3-1' }} />)
+
+    expect(await screen.findByText('Inspector: Payment orchestration')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('react-flow')).toHaveTextContent('Payment orchestration'))
+    expect(screen.getByText('Payments')).toHaveClass('current')
+    expect(screen.getByRole('button', { name: 'Banking' })).toBeInTheDocument()
   })
 
   it('shows scaffold generation failures inside the open dialog', async () => {

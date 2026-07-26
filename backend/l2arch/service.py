@@ -41,6 +41,13 @@ def readiness(project_id: str, l2_element_id: str, workspace: dict[str, Any] | N
     security_nfr = any(n["category"] == "security" for n in nfrs)
     sensitive_owned = any(c["security_classification"] in ("confidential", "restricted") for c in containers)
     owned = [c for c in containers if (c["owner_team"] or "").strip()]
+    structure_coverage = {
+        "applications": any(c.get("container_type") == "application" for c in containers),
+        "services_containers": any(c.get("container_type") in ("service", "gateway", "job") for c in containers),
+        "data_stores": any(c.get("container_type") == "data_store" or (c.get("owns_data") or "").strip() for c in containers),
+        "platform_cloud": any(c.get("container_type") in ("platform", "cloud_resource") for c in containers),
+        "apis": bool(apis),
+    }
 
     areas = {
         "l1_alignment": 1.0 if workspace.get("parent") else 0.5,
@@ -59,6 +66,8 @@ def readiness(project_id: str, l2_element_id: str, workspace: dict[str, Any] | N
         ("Linked to an L1 initiative/epic", bool(workspace.get("parent"))),
         ("Container diagram is created", has_diagram),
         ("Core containers are named", len(containers) >= 1),
+        ("Applications, services, data stores, platform, and cloud assets can be explicitly classified",
+         bool(containers) and all(bool(c.get("container_type")) for c in containers)),
         ("Service boundaries documented (responsibilities + owner)", len(boundaried) >= 1),
         ("APIs are identified", len(apis) >= 1),
         ("Data classification captured on APIs", any((a["data_classification"] or "") for a in apis)),
@@ -96,6 +105,7 @@ def readiness(project_id: str, l2_element_id: str, workspace: dict[str, Any] | N
         "checklist": [{"item": item, "done": done} for item, done in checklist],
         "gaps": [item for item, done in checklist if not done],
         "recommendations": recommendations,
+        "structure_coverage": structure_coverage,
     }
 
 
@@ -147,8 +157,8 @@ def engineering_summary(project_id: str, l2_element_id: str) -> dict[str, Any]:
     md.append("```mermaid\n" + diagram + "\n```\n" if diagram else "_No container diagram yet._\n")
 
     md.append("## Containers & Service Boundaries\n")
-    md.append(_table(["Container", "Capability", "Owner team", "Security", "Criticality"],
-                     [[c["name"], c["capability"], c["owner_team"], c["security_classification"], c["nfr_criticality"]] for c in containers]) + "\n"
+    md.append(_table(["Container", "Type", "Capability", "Owns data", "Owner team", "Security", "Criticality"],
+                     [[c["name"], c.get("container_type", "service"), c["capability"], c["owns_data"], c["owner_team"], c["security_classification"], c["nfr_criticality"]] for c in containers]) + "\n"
               if containers else "_No containers defined yet._\n")
 
     md.append("## API & Data Contracts\n")

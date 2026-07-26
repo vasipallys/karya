@@ -397,6 +397,7 @@ CREATE TABLE IF NOT EXISTS l2_containers (
   id TEXT PRIMARY KEY,
   l2_element_id TEXT NOT NULL REFERENCES c4_elements(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  container_type TEXT NOT NULL DEFAULT 'service' CHECK (container_type IN ('application','service','data_store','platform','cloud_resource','job','gateway')),
   capability TEXT NOT NULL DEFAULT '',
   responsibilities TEXT NOT NULL DEFAULT '',
   owns_data TEXT NOT NULL DEFAULT '',
@@ -518,10 +519,23 @@ CREATE TABLE IF NOT EXISTS l3_concerns (
   status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','implemented','gap')),
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS l3_behavior_views (
+  id TEXT PRIMARY KEY,
+  l3_element_id TEXT NOT NULL REFERENCES c4_elements(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  view_type TEXT NOT NULL CHECK (view_type IN ('user_journey','sequence_flow','bpmn','erd','test_scenario')),
+  description TEXT NOT NULL DEFAULT '',
+  mermaid_source TEXT NOT NULL DEFAULT '',
+  reference_url TEXT NOT NULL DEFAULT '',
+  owner TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','reviewed','approved')),
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_l3_components_element ON l3_components(l3_element_id);
 CREATE INDEX IF NOT EXISTS idx_l3_interfaces_element ON l3_interfaces(l3_element_id);
 CREATE INDEX IF NOT EXISTS idx_l3_dependencies_element ON l3_dependencies(l3_element_id);
 CREATE INDEX IF NOT EXISTS idx_l3_concerns_element ON l3_concerns(l3_element_id);
+CREATE INDEX IF NOT EXISTS idx_l3_behavior_views_element ON l3_behavior_views(l3_element_id);
 CREATE TABLE IF NOT EXISTS l4_arch (
   l4_element_id TEXT PRIMARY KEY REFERENCES c4_elements(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -560,9 +574,21 @@ CREATE TABLE IF NOT EXISTS l4_checklist (
   done INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS l4_delivery_assets (
+  id TEXT PRIMARY KEY,
+  l4_element_id TEXT NOT NULL REFERENCES c4_elements(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  asset_type TEXT NOT NULL CHECK (asset_type IN ('ci_pipeline','code_review','iac','release_package')),
+  location TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  owner TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','ready','verified','released')),
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_l4_code_units_element ON l4_code_units(l4_element_id);
 CREATE INDEX IF NOT EXISTS idx_l4_test_cases_element ON l4_test_cases(l4_element_id);
 CREATE INDEX IF NOT EXISTS idx_l4_checklist_element ON l4_checklist(l4_element_id);
+CREATE INDEX IF NOT EXISTS idx_l4_delivery_assets_element ON l4_delivery_assets(l4_element_id);
 CREATE TABLE IF NOT EXISTS integration_configs (
   connector_key TEXT PRIMARY KEY,
   enabled INTEGER NOT NULL DEFAULT 0,
@@ -698,6 +724,7 @@ def init_db(path: Path | None = None) -> None:
             "target_users_details": "TEXT NOT NULL DEFAULT ''",
         })
         _ensure_columns(conn, "l2_arch", {"raci": "TEXT NOT NULL DEFAULT '{}'"})
+        _ensure_columns(conn, "l2_containers", {"container_type": "TEXT NOT NULL DEFAULT 'service'"})
         _seed_resource_lookups(conn)
     _initialized.add(str(target))
 

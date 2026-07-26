@@ -18,6 +18,7 @@ from backend.chat.graph import get_chat_graph
 from backend.projects.store import NotFoundError
 from backend.llm.factory import LLMInvocationError
 from backend.llm.local import LocalModelInferenceError, LocalModelLoadingError
+from backend.planning import store as planning_store
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["chat"])
 
@@ -27,8 +28,13 @@ def _run(operation: Callable[[], Any]) -> Any:
         return operation()
     except (NotFoundError, c4_store.NotFoundError, chat_store.ChatStoreError) as exc:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": str(exc)}) from exc
-    except (service.ChatError, c4_store.C4ValidationError) as exc:
+    except (service.ChatError, c4_store.C4ValidationError, planning_store.PlanningValidationError) as exc:
         raise HTTPException(status_code=400, detail={"code": "chat_invalid", "message": str(exc)}) from exc
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "chat_invalid", "message": "The proposed change is malformed or no longer valid."},
+        ) from exc
 
 
 class ChatRequest(BaseModel):
@@ -170,7 +176,7 @@ async def chat_stream(project_id: str, payload: ChatRequest, request: Request) -
         except LLMInvocationError as exc:
             yield sse("error", {"code": "llm_provider_error", "message": str(exc),
                                 "retryable": exc.retryable})
-        except (service.ChatError, c4_store.C4ValidationError) as exc:
+        except (service.ChatError, c4_store.C4ValidationError, planning_store.PlanningValidationError) as exc:
             yield sse("error", {"code": "chat_invalid", "message": str(exc), "retryable": False})
         except ValueError as exc:
             yield sse("error", {"code": "invalid_model_output", "message": str(exc), "retryable": True})

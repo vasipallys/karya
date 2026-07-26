@@ -20,6 +20,8 @@ from backend.config import get_settings
 from backend.llm.factory import get_llm
 from backend.l2arch import store as l2_store
 from backend.l2arch.models import L2Update
+from backend.planning import store as planning_store
+from backend.planning.models import AgileUnitCreate
 
 
 @pytest.fixture
@@ -283,6 +285,172 @@ def test_create_proposes_then_applies_and_rbac():
         applied = client.post(f"/projects/{pid}/chat/apply", json={"mutation": mutation}, headers=ADMIN)
         assert applied.status_code == 200
         assert any(e["name"] == "payments" and e["level"] == "L2" for e in c4_store.list_graph(pid)["elements"])
+
+
+def test_tribe_request_routes_to_operating_plan_not_c4(monkeypatch):
+    """Regression for the production failure where "add a tribe" became an L2."""
+    async def unexpected_llm(*args, **kwargs):
+        pytest.fail("explicit tribe/squad intent must be provider-independent")
+
+    monkeypatch.setattr(agents, "_invoke", unexpected_llm)
+    pid, l1_id, _ = _scope()
+    with TestClient(app) as client:
+        proposal = client.post(f"/projects/{pid}/chat", json={
+            "message": "Create a tribe for the Digital banking system",
+            "screen_context": {
+                "tab": "planning", "tab_label": "L1 plan", "level": "L1", "element_id": l1_id,
+            },
+        }, headers=ADMIN)
+        assert proposal.status_code == 200
+        result = proposal.json()
+        assert result["action"] == "create_agile_unit"
+        assert result["mutation"]["unit_type"] == "tribe"
+        assert result["mutation"]["scope"] == "Digital banking"
+        assert result["mutation"]["name"] == "Digital banking Tribe"
+        assert not any(e["name"] == "Tribe" for e in c4_store.list_graph(pid)["elements"])
+
+        applied = client.post(
+            f"/projects/{pid}/chat/apply",
+            json={"mutation": result["mutation"]},
+            headers=ADMIN,
+        )
+        assert applied.status_code == 200
+        plan = planning_store.get_plan(pid, l1_id)
+        assert [(unit["unit_type"], unit["name"]) for unit in plan["units"]] == [
+            ("tribe", "Digital banking Tribe"),
+        ]
+        assert all(element["level"] != "L2" or element["name"] != "Tribe"
+                   for element in c4_store.list_graph(pid)["elements"])
+        replay = client.post(
+            f"/projects/{pid}/chat/apply",
+            json={"mutation": result["mutation"]},
+            headers=ADMIN,
+        )
+        assert replay.status_code == 400
+        assert "already exists" in replay.json()["error"]["message"]
+
+
+def test_squad_is_attached_to_named_tribe_and_can_be_listed():
+    pid, l1_id, _ = _scope()
+    tribe = planning_store.create_unit(
+        pid, l1_id,
+        AgileUnitCreate(unit_type="tribe", name="Growth Tribe"),
+    )
+    with TestClient(app) as client:
+        proposal = _chat(client, pid, "Create a squad called Checkout under Growth Tribe").json()
+        assert proposal["action"] == "create_agile_unit"
+        assert proposal["mutation"]["unit_type"] == "squad"
+        assert proposal["mutation"]["parent"] == "Growth Tribe"
+        applied = client.post(
+            f"/projects/{pid}/chat/apply",
+            json={"mutation": proposal["mutation"]},
+            headers=ADMIN,
+        )
+        assert applied.status_code == 200
+        squad = next(unit for unit in planning_store.get_plan(pid, l1_id)["units"]
+                     if unit["name"] == "Checkout")
+        assert squad["parent_unit_id"] == tribe["id"]
+
+        listing = _chat(client, pid, "list squads").json()
+        assert listing["action"] == "list_agile_units"
+        assert listing["data"]["items"][0]["name"] == "Checkout"
+
+        scoped = _chat(client, pid, "Create a squad called Mobile in Digital banking").json()
+        assert scoped["mutation"]["scope"] == "Digital banking"
+        assert scoped["mutation"]["parent"] == "Growth Tribe"
+
+
+def test_team_member_assignment_is_proposed_and_applied():
+    pid, l1_id, _ = _scope()
+    squad = planning_store.create_unit(
+        pid, l1_id,
+        AgileUnitCreate(unit_type="squad", name="Checkout Squad"),
+    )
+    with TestClient(app) as client:
+        proposal = _chat(client, pid, "Add Priya to Checkout Squad as QA at 50%").json()
+        assert proposal["action"] == "assign_team_member"
+        assert proposal["mutation"]["unit"] == "Checkout Squad"
+        assert proposal["mutation"]["allocation_percent"] == 50
+        client.post(
+            f"/projects/{pid}/chat/apply",
+            json={"mutation": proposal["mutation"]},
+            headers=ADMIN,
+        )
+        member = planning_store.get_plan(pid, l1_id)["units"][0]["members"][0]
+        assert member["unit_id"] == squad["id"]
+        assert member["name"] == "Priya"
+        assert member["role"] == "QA"
+        assert member["allocation_percent"] == 50
+
+        update = _chat(client, pid, "Set Priya's allocation to 70% in Checkout Squad").json()
+        assert update["action"] == "update_team_member"
+        client.post(
+            f"/projects/{pid}/chat/apply",
+            json={"mutation": update["mutation"]},
+            headers=ADMIN,
+        )
+        member = planning_store.get_plan(pid, l1_id)["units"][0]["members"][0]
+        assert member["allocation_percent"] == 70
+
+        removal = _chat(client, pid, "Remove Priya from Checkout Squad").json()
+        assert removal["action"] == "remove_team_member"
+        client.post(
+            f"/projects/{pid}/chat/apply",
+            json={"mutation": removal["mutation"]},
+            headers=ADMIN,
+        )
+        assert planning_store.get_plan(pid, l1_id)["units"][0]["members"] == []
+
+
+def test_tribe_rename_delete_and_combined_list_are_not_c4_mutations():
+    pid, l1_id, _ = _scope()
+    planning_store.create_unit(pid, l1_id, AgileUnitCreate(unit_type="tribe", name="Growth Tribe"))
+    planning_store.create_unit(pid, l1_id, AgileUnitCreate(unit_type="squad", name="Independent Squad"))
+    with TestClient(app) as client:
+        listing = _chat(client, pid, "show tribes and squads").json()
+        assert listing["action"] == "list_agile_units"
+        assert {item["unit_type"] for item in listing["data"]["items"]} == {"tribe", "squad"}
+
+        rename = _chat(client, pid, "rename Growth Tribe to Digital Tribe").json()
+        assert rename["action"] == "update_agile_unit"
+        client.post(f"/projects/{pid}/chat/apply", json={"mutation": rename["mutation"]}, headers=ADMIN)
+        assert any(unit["name"] == "Digital Tribe" for unit in planning_store.get_plan(pid, l1_id)["units"])
+
+        deletion = _chat(client, pid, "delete Digital Tribe").json()
+        assert deletion["action"] == "delete_agile_unit"
+        client.post(f"/projects/{pid}/chat/apply", json={"mutation": deletion["mutation"]}, headers=ADMIN)
+        assert all(unit["name"] != "Digital Tribe" for unit in planning_store.get_plan(pid, l1_id)["units"])
+
+
+def test_generic_team_create_asks_for_domain_instead_of_guessing_level():
+    pid, l1_id, _ = _scope()
+    with TestClient(app) as client:
+        response = client.post(f"/projects/{pid}/chat", json={
+            "message": "Add a team",
+            "screen_context": {
+                "tab": "planning", "tab_label": "L1 plan", "level": "L1", "element_id": l1_id,
+            },
+        }, headers=ADMIN)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["action"] == "answer"
+        assert "tribe" in result["reply"].lower() and "squad" in result["reply"].lower()
+        assert result["mutation"] is None
+
+
+def test_malformed_chat_mutation_is_a_clean_400():
+    pid, l1_id, _ = _scope()
+    planning_store.create_unit(pid, l1_id, AgileUnitCreate(unit_type="squad", name="Checkout Squad"))
+    with TestClient(app) as client:
+        response = client.post(f"/projects/{pid}/chat/apply", json={"mutation": {
+            "action": "assign_team_member",
+            "scope": "Digital banking",
+            "unit": "Checkout Squad",
+            "name": "Priya",
+            "allocation_percent": None,
+        }}, headers=ADMIN)
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "chat_invalid"
 
 
 def test_create_without_parent_attaches_to_the_system_l1():

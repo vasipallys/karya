@@ -58,7 +58,7 @@ def test_arch_upsert_and_default():
 
 def test_artifact_crud():
     project_id, _, l2 = _scope()
-    c = store.create_container(project_id, l2, ContainerCreate(name="Svc", owner_team="Squad A", responsibilities="Core"))
+    c = store.create_container(project_id, l2, ContainerCreate(name="Svc", container_type="service", owner_team="Squad A", responsibilities="Core"))
     store.create_api(project_id, l2, ApiCreate(name="GET /x", provider="Svc"))
     store.create_nfr(project_id, l2, NfrCreate(name="Latency", category="performance", target="300ms"))
     store.create_integration(project_id, l2, IntegrationCreate(name="Core", target_system="Core Banking"))
@@ -66,6 +66,7 @@ def test_artifact_crud():
     assert len(store.list_apis(l2)) == 1
     assert len(store.list_nfrs(l2)) == 1
     assert len(store.list_integrations(l2)) == 1
+    assert store.list_containers(l2)[0]["container_type"] == "service"
     store.delete_container(project_id, c["id"])
     assert store.list_containers(l2) == []
 
@@ -83,6 +84,7 @@ def test_readiness_progression_and_weights():
     assert len(result["areas"]) == 9
     assert sum(a["weight"] for a in result["areas"]) == 100
     assert isinstance(result["gaps"], list)
+    assert "structure_coverage" in result
 
 
 def test_engineering_summary_markdown_mermaid():
@@ -161,3 +163,4 @@ async def test_ai_generate_and_apply_l2():
     assert result["containers"] == len(draft.containers)
     assert store.get_l2(project_id, l2)["container_diagram"] == draft.container_diagram
     assert len(store.list_apis(l2)) == len(draft.apis)
+    assert all(container["container_type"] for container in store.list_containers(l2))

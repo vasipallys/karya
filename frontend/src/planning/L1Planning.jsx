@@ -1,8 +1,9 @@
-import { Blocks, CalendarRange, CircleAlert, FileText, Landmark, PanelTopClose, PanelTopOpen, RefreshCw, ShieldCheck, UsersRound, WalletCards } from 'lucide-react'
+import { Blocks, CalendarRange, CircleAlert, FileText, Landmark, Network, PanelTopClose, PanelTopOpen, RefreshCw, ShieldCheck, UsersRound, WalletCards } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import LevelBreadcrumb from '../components/LevelBreadcrumb'
+import LevelNavigator from '../components/LevelNavigator'
 import TeamPlanning from './TeamPlanning'
 import WorkCostPlanning from './WorkCostPlanning'
 
@@ -66,7 +67,10 @@ export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpe
   }
 
   if (loading) return <div className="l1-loading">Loading operating plans…</div>
-  if (initiatives.length === 0) return <div className="l1-empty-panel prominent"><Landmark size={38} /><h2>No L1 initiative yet</h2><p>Create an L1 system or initiative on the C4 canvas first. It becomes the anchor for teams, funding, work, and architecture.</p><button className="m3-btn filled" onClick={onOpenCanvas}>Open C4 canvas</button></div>
+  if (initiatives.length === 0) return <>
+    <LevelNavigator elements={graph.elements} activeLevel="L1" onNavigate={onOpenElement} onOpenCanvas={onOpenCanvas} />
+    <div className="l1-empty-panel prominent"><Landmark size={38} /><h2>No L1 initiative yet</h2><p>Create an L1 system or initiative on the C4 canvas first. It becomes the anchor for teams, funding, work, and architecture.</p><button className="m3-btn filled" onClick={() => onOpenCanvas?.()}>Open C4 canvas</button></div>
+  </>
 
   return <div className="l1-planning">
     {error && <div className="m3-banner error"><CircleAlert size={18} /><span>{String(error.message || error)}</span><button className="m3-btn text small" onClick={() => setError(null)}>Dismiss</button></div>}
@@ -76,11 +80,14 @@ export default function L1Planning({ projectId, requestedL1Id, onL1Change, onOpe
         <div><span className="l1-eyebrow">L1 operating plan</span><select value={l1Id} onChange={(event) => setL1Id(event.target.value)} aria-label="Select L1 initiative">{initiatives.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{headerOpen && <p>{plan?.element.description || 'Align organization, investment, delivery, and technology around this initiative.'}</p>}{headerOpen && <LevelBreadcrumb elements={graph.elements} elementId={l1Id} onNavigate={onOpenElement} />}</div>
       </div>
       <div className="l1-plan-tools">
+        <button className="m3-btn text small" onClick={() => onOpenCanvas?.(l1Id)}><Network size={15} /> View in C4</button>
         <label><span>Reporting currency</span><select value={currency} onChange={(event) => changeCurrency(event.target.value)}>{CURRENCIES.map((item) => <option key={item}>{item}</option>)}</select></label>
         <button className="m3-icon-btn" onClick={() => refresh().catch(setError)} aria-label="Refresh plan"><RefreshCw size={17} /></button>
         <button className="m3-icon-btn" onClick={() => setHeaderOpen((open) => !open)} aria-label={headerOpen ? 'Collapse plan header' : 'Expand plan header'} title={headerOpen ? 'Collapse header' : 'Expand header'}>{headerOpen ? <PanelTopClose size={17} /> : <PanelTopOpen size={17} />}</button>
       </div>
     </header>
+
+    <LevelNavigator elements={graph.elements} elementId={l1Id} activeLevel="L1" onNavigate={onOpenElement} onOpenCanvas={onOpenCanvas} />
 
     {plan && <>
       {headerOpen && <div className="l1-metrics">

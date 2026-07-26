@@ -176,6 +176,7 @@ class FieldSummary(BaseModel):
 
 class DraftContainer(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    container_type: Literal["application", "service", "data_store", "platform", "cloud_resource", "job", "gateway"] = "service"
     capability: str = Field(default="", max_length=200)
     responsibilities: str = Field(default="", max_length=1000)
     owner_team: str = Field(default="", max_length=160)
@@ -256,6 +257,14 @@ class DraftConcern(BaseModel):
     approach: str = Field(default="", max_length=600)
 
 
+class DraftBehaviorView(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    view_type: Literal["user_journey", "sequence_flow", "bpmn", "erd", "test_scenario"]
+    description: str = Field(default="", max_length=1200)
+    mermaid_source: str = Field(default="", max_length=8000)
+    owner: str = Field(default="", max_length=160)
+
+
 class L3Draft(BaseModel):
     summary: str = Field(default="", max_length=1600)
     component_diagram: str = Field(default="", max_length=8000)
@@ -263,6 +272,7 @@ class L3Draft(BaseModel):
     interfaces: list[DraftInterface] = Field(default_factory=list, max_length=20)
     dependencies: list[DraftDependency] = Field(default_factory=list, max_length=20)
     concerns: list[DraftConcern] = Field(default_factory=list, max_length=15)
+    behavior_views: list[DraftBehaviorView] = Field(default_factory=list, max_length=15)
 
 
 # ---- L4 implementation-detail generator ---------------------------------
@@ -287,27 +297,44 @@ class DraftChecklistItem(BaseModel):
     category: Literal["code", "tests", "docs", "security", "review", "deploy"] = "code"
 
 
+class DraftDeliveryAsset(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    asset_type: Literal["ci_pipeline", "code_review", "iac", "release_package"]
+    location: str = Field(default="", max_length=1000)
+    description: str = Field(default="", max_length=1200)
+    owner: str = Field(default="", max_length=160)
+
+
 class L4Draft(BaseModel):
     summary: str = Field(default="", max_length=1600)
     code_diagram: str = Field(default="", max_length=8000)
     code_units: list[DraftCodeUnit] = Field(default_factory=list, max_length=25)
     test_cases: list[DraftTestCase] = Field(default_factory=list, max_length=25)
     checklist: list[DraftChecklistItem] = Field(default_factory=list, max_length=20)
+    delivery_assets: list[DraftDeliveryAsset] = Field(default_factory=list, max_length=12)
 
 
 # ---- Conversational assistant -------------------------------------------
 
 class ChatCommand(BaseModel):
-    """One interpreted chat intent. Reads execute immediately; the *_element writes
-    are surfaced to the user as a proposal to apply."""
+    """One interpreted chat intent.
+
+    Reads execute immediately. Workspace writes are surfaced as proposals and
+    only persist after an explicit Apply. ``scope`` and ``unit_type`` keep the
+    L1 operating-plan vocabulary (tribe/squad) separate from C4 levels.
+    """
     action: Literal[
         "overview", "list", "describe", "readiness", "report",
         "create_element", "update_element", "delete_element", "create_relation",
+        "list_agile_units", "create_agile_unit", "update_agile_unit", "delete_agile_unit",
+        "assign_team_member", "update_team_member", "remove_team_member",
         "answer", "code", "web_search", "image", "document", "help", "none",
     ] = "help"
     level: str = Field(default="", max_length=4)       # L1–L4 (list / create)
     name: str = Field(default="", max_length=200)      # target element name
     parent: str = Field(default="", max_length=200)    # parent element name (create)
+    scope: str = Field(default="", max_length=200)     # owning L1 initiative / operating plan
+    unit_type: str = Field(default="", max_length=20)  # tribe or squad
     new_name: str = Field(default="", max_length=200)  # rename target
     status: str = Field(
         default="",
@@ -317,6 +344,12 @@ class ChatCommand(BaseModel):
     description: str = Field(default="", max_length=2000)
     target: str = Field(default="", max_length=200)    # relation target name (create_relation, or create_element + route)
     label: str = Field(default="", max_length=120)     # relation label, e.g. "routes"
+    lead_name: str = Field(default="", max_length=160)
+    capacity_fte: float | None = Field(default=None, ge=0, le=10000)
+    target_velocity: float | None = Field(default=None, ge=0, le=100000)
+    role: str = Field(default="", max_length=160)      # team-member role
+    allocation_percent: float | None = Field(default=None, ge=0, le=100)
+    monthly_cost: float | None = Field(default=None, ge=0, le=100000000)
     reply: str = Field(default="", max_length=12000)   # markdown answer / generated code
 
     @field_validator("status", mode="before")

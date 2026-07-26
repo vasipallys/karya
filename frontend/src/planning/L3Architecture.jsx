@@ -1,9 +1,11 @@
-import { Boxes, CheckCircle2, Circle, FileText, Gavel, GitBranch, Grid3x3, Layers, Network, Pencil, Plug, Puzzle, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
+import { Boxes, CheckCircle2, Circle, FileText, Gavel, GitBranch, Grid3x3, Layers, Network, Pencil, Plug, Puzzle, Route, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import AiAssist from '../components/AiAssist'
 import FlowForward from '../components/FlowForward'
 import LevelBreadcrumb from '../components/LevelBreadcrumb'
+import LevelDefinition from '../components/LevelDefinition'
+import LevelNavigator from '../components/LevelNavigator'
 import { MarkdownViewer } from '../components/MarkdownEditor'
 import MermaidView from '../components/MermaidView'
 import MermaidWorkbench from '../components/MermaidWorkbench'
@@ -15,6 +17,7 @@ const DiagramStudio = lazy(() => import('./DiagramStudio'))
 const TABS = [
   { id: 'overview', label: 'Component diagram', icon: Network },
   { id: 'components', label: 'Components', icon: Puzzle },
+  { id: 'behavior', label: 'Behavior models', icon: Route },
   { id: 'interfaces', label: 'Interfaces & contracts', icon: Plug },
   { id: 'dependencies', label: 'Dependencies', icon: Layers },
   { id: 'concerns', label: 'Design concerns', icon: ShieldAlert },
@@ -25,7 +28,7 @@ const TABS = [
 ]
 const RACI_LABELS = {
   component_diagram: 'Component Diagram', component_breakdown: 'Component Breakdown', interfaces: 'Interfaces',
-  dependencies: 'Dependencies', design_concerns: 'Design Concerns', security: 'Security', testing: 'Testing',
+  behavior_models: 'Behavior Models', dependencies: 'Dependencies', design_concerns: 'Design Concerns', security: 'Security', testing: 'Testing',
   documentation: 'Documentation',
 }
 const ROLE_LABELS = {
@@ -69,18 +72,29 @@ const FIELDS = {
     { key: 'owner', label: 'Owner' },
     { key: 'status', label: 'Status', ...SELECT(['planned', 'implemented', 'gap']) },
   ],
+  behavior_view: [
+    { key: 'name', label: 'Behavior view' },
+    { key: 'view_type', label: 'Type', ...SELECT(['user_journey', 'sequence_flow', 'bpmn', 'erd', 'test_scenario']) },
+    { key: 'description', label: 'Scenario / acceptance criteria', type: 'textarea' },
+    { key: 'mermaid_source', label: 'Mermaid source (optional for test scenarios)', type: 'textarea' },
+    { key: 'reference_url', label: 'External reference URL' },
+    { key: 'owner', label: 'Owner' },
+    { key: 'status', label: 'Status', ...SELECT(['draft', 'reviewed', 'approved']) },
+  ],
 }
 const DEFAULTS = {
   component: { name: '', component_type: 'service', responsibilities: '', tech: '', pattern: '', owner: '', status: 'active' },
   interface: { name: '', direction: 'provided', interface_type: 'REST', contract: '', counterpart: '', authentication: '', status: 'proposed' },
   dependency: { name: '', dependency_type: 'internal', target: '', reason: '', criticality: 'medium', status: 'active' },
   concern: { name: '', category: 'security', approach: '', owner: '', status: 'planned' },
+  behavior_view: { name: '', view_type: 'user_journey', description: '', mermaid_source: '', reference_url: '', owner: '', status: 'draft' },
 }
 const API = {
   component: { create: 'createL3Component', update: 'updateL3Component', del: 'deleteL3Component' },
   interface: { create: 'createL3Interface', update: 'updateL3Interface', del: 'deleteL3Interface' },
   dependency: { create: 'createL3Dependency', update: 'updateL3Dependency', del: 'deleteL3Dependency' },
   concern: { create: 'createL3Concern', update: 'updateL3Concern', del: 'deleteL3Concern' },
+  behavior_view: { create: 'createL3BehaviorView', update: 'updateL3BehaviorView', del: 'deleteL3BehaviorView' },
 }
 const PILL = (v) => `res-pill ${['high', 'gap', 'restricted'].includes(v) ? 'sub-partiallyallocated' : ['low', 'implemented', 'active', 'provided'].includes(v) ? 'ok' : ''}`
 
@@ -174,9 +188,10 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
     try { await api.setL3Raci(projectId, l3Id, artifact, role, value); await load() } catch (err) { fail(err) }
   }
 
-  if (elements.length === 0) {
-    return <div className="l1-empty-panel prominent"><Puzzle size={38} /><h2>No L3 component yet</h2><p>Create an L3 component/story on the C4 canvas first (a child of an L2 container). It becomes the anchor for component architecture.</p><button className="m3-btn filled" onClick={onOpenCanvas}>Open C4 canvas</button></div>
-  }
+  if (elements.length === 0) return <>
+    <LevelNavigator elements={allElements} activeLevel="L3" onNavigate={onOpenElement} onOpenCanvas={onOpenCanvas} />
+    <div className="l1-empty-panel prominent"><Puzzle size={38} /><h2>No L3 component yet</h2><p>Create an L3 component/story on the C4 canvas first (a child of an L2 container). It becomes the anchor for component architecture.</p><button className="m3-btn filled" onClick={() => onOpenCanvas?.()}>Open C4 canvas</button></div>
+  </>
 
   return <div className="l1-planning">
     {error && <div className="m3-banner error"><span>{String(error.message || error)}</span><button className="m3-btn text small" onClick={() => setError(null)}>Dismiss</button></div>}
@@ -188,6 +203,7 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
           <LevelBreadcrumb elements={allElements} elementId={l3Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
+        <button className="m3-btn text small" onClick={() => onOpenCanvas?.(l3Id)}><Network size={15} /> View in C4</button>
         <FlowForward projectId={projectId} elementId={l3Id} label="AI: draft tasks" childLabel="tasks (L4)"
           disabled={!l3Id} onApplied={loadGraph}
           guidance={() => [
@@ -201,7 +217,10 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
       </div>
     </header>
 
+    <LevelNavigator elements={allElements} elementId={l3Id} activeLevel="L3" onNavigate={onOpenElement} onOpenCanvas={onOpenCanvas} />
+
     {ws && <>
+      <LevelDefinition definition={ws.level_definition} />
       <div className="l1arch-head"><ReadinessCard readiness={ws.readiness} /></div>
       <nav className="l1arch-tabs" aria-label="L3 sections">
         {TABS.map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => (id === 'summary' ? openSummary() : id === 'traceability' ? openTraceability() : setTab(id))}><Icon size={15} /> {label}</button>)}
@@ -232,6 +251,7 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
       </div>}
 
       {tab === 'components' && <ArtifactTab entity="component" title="Components & Responsibilities" columns={['name', 'component_type', 'tech', 'pattern', 'owner', 'status']} rows={ws.components} onAdd={() => openDialog('component')} onEdit={openDialog} onDelete={removeEntity} />}
+      {tab === 'behavior' && <BehaviorTab rows={ws.behavior_views} onAdd={() => openDialog('behavior_view')} onEdit={openDialog} onDelete={removeEntity} />}
       {tab === 'interfaces' && <ArtifactTab entity="interface" title="Interfaces & Contracts" columns={['name', 'direction', 'interface_type', 'counterpart', 'authentication', 'status']} rows={ws.interfaces} onAdd={() => openDialog('interface')} onEdit={openDialog} onDelete={removeEntity} />}
       {tab === 'dependencies' && <ArtifactTab entity="dependency" title="Dependencies" columns={['name', 'dependency_type', 'target', 'criticality', 'status']} rows={ws.dependencies} onAdd={() => openDialog('dependency')} onEdit={openDialog} onDelete={removeEntity} />}
       {tab === 'concerns' && <ArtifactTab entity="concern" title="Cross-Cutting Design Concerns" columns={['name', 'category', 'approach', 'status']} rows={ws.concerns} onAdd={() => openDialog('concern')} onEdit={openDialog} onDelete={removeEntity} />}
@@ -272,7 +292,7 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
       </div>}
     </>}
 
-    {dialog && <PlanningDialog wide title={`${dialog.editing ? 'Edit' : 'Add'} ${dialog.entity}`} onClose={() => setDialog(null)}
+    {dialog && <PlanningDialog wide title={`${dialog.editing ? 'Edit' : 'Add'} ${dialog.entity.replace(/_/g, ' ')}`} onClose={() => setDialog(null)}
       actions={<><button className="m3-btn text" onClick={() => setDialog(null)}>Cancel</button><button className="m3-btn filled" disabled={busy || !dialog.draft.name.trim()} onClick={saveEntity}>Save</button></>}>
       <div className="l1-form-grid">
         {FIELDS[dialog.entity].map((f) => <label key={f.key} className="m3-field"><span>{f.label}</span>
@@ -289,7 +309,7 @@ export default function L3Architecture({ projectId, requestedId, onOpenCanvas, o
       actions={<><button className="m3-btn text" onClick={() => setAi(null)}>Cancel</button><button className="m3-btn filled" disabled={busy} onClick={applyAi}>Apply all</button></>}>
       <div className="m3-banner info">{ai.draft.summary}</div>
       <div className="ai-baseline-preview">
-        <p><strong>{ai.draft.components.length}</strong> components · <strong>{ai.draft.interfaces.length}</strong> interfaces · <strong>{ai.draft.dependencies.length}</strong> deps · <strong>{ai.draft.concerns.length}</strong> concerns</p>
+        <p><strong>{ai.draft.components.length}</strong> components · <strong>{ai.draft.behavior_views?.length || 0}</strong> behavior views · <strong>{ai.draft.interfaces.length}</strong> interfaces · <strong>{ai.draft.dependencies.length}</strong> deps · <strong>{ai.draft.concerns.length}</strong> concerns</p>
         {ai.draft.component_diagram && <MermaidView source={ai.draft.component_diagram} fit="width" />}
       </div>
     </PlanningDialog>}
@@ -367,4 +387,22 @@ function ArtifactTab({ entity, title, columns, rows, onAdd, onEdit, onDelete }) 
         </tbody>
       </table></div>}
   </div>
+}
+
+function BehaviorTab({ rows, onAdd, onEdit, onDelete }) {
+  const diagramViews = rows.filter((view) => view.mermaid_source?.trim())
+  return <>
+    <ArtifactTab entity="behavior_view" title="User Journeys, Sequence Flows, BPMN, ERD & Test Scenarios"
+      columns={['name', 'view_type', 'description', 'owner', 'status']} rows={rows}
+      onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
+    {diagramViews.length > 0 && <div className="l1arch-panel">
+      <div className="l1arch-section-head"><h3>Behavior previews <small>Live Mermaid views</small></h3></div>
+      <div className="behavior-preview-grid">
+        {diagramViews.map((view) => <article key={view.id}>
+          <header><strong>{view.name}</strong><span className="res-pill">{view.view_type.replace(/_/g, ' ')}</span></header>
+          <MermaidView source={view.mermaid_source} fit="width" />
+        </article>)}
+      </div>
+    </div>}
+  </>
 }

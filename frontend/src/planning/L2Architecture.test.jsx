@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api/client'
 import { ToastProvider } from '../ui/Toast'
@@ -81,10 +81,21 @@ describe('L2Architecture AI draft summary', () => {
     const onOpenElement = vi.fn()
     renderL2({ onOpenElement })
 
-    fireEvent.click(await screen.findByRole('button', { name: /Commerce/ }))
+    const breadcrumb = await screen.findByRole('navigation', { name: 'Level navigation' })
+    fireEvent.click(within(breadcrumb).getByRole('button', { name: /Commerce/ }))
     expect(onOpenElement).toHaveBeenCalledWith(expect.objectContaining({ id: 'l1-1', level: 'L1' }))
 
-    fireEvent.click(screen.getByRole('button', { name: /Payment intent API/ }))
+    fireEvent.click(within(breadcrumb).getByRole('button', { name: /Payment intent API/ }))
     expect(onOpenElement).toHaveBeenCalledWith(expect.objectContaining({ id: 'l3-1', level: 'L3' }))
+  })
+
+  it('returns to the exact selected element on the C4 canvas', async () => {
+    api.l2Workspace.mockResolvedValue(workspace())
+    const onOpenCanvas = vi.fn()
+    renderL2({ onOpenCanvas })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View in C4' }))
+
+    expect(onOpenCanvas).toHaveBeenCalledWith('l2-1')
   })
 })

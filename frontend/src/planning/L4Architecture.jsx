@@ -1,8 +1,10 @@
-import { CheckCircle2, CheckSquare, Circle, ClipboardCopy, Code2, Download, FileText, FlaskConical, GitBranch, ListChecks, Network, Pencil, Plus, Sparkles, Square, Trash2 } from 'lucide-react'
+import { CheckCircle2, CheckSquare, Circle, ClipboardCopy, Code2, Download, FileText, FlaskConical, GitBranch, ListChecks, Network, PackageCheck, Pencil, Plus, Sparkles, Square, Trash2 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import AiAssist from '../components/AiAssist'
 import LevelBreadcrumb from '../components/LevelBreadcrumb'
+import LevelDefinition from '../components/LevelDefinition'
+import LevelNavigator from '../components/LevelNavigator'
 import { MarkdownViewer } from '../components/MarkdownEditor'
 import { buildDevHandoff, handoffFilename } from './devHandoff'
 import MermaidView from '../components/MermaidView'
@@ -16,6 +18,7 @@ const TABS = [
   { id: 'overview', label: 'Implementation diagram', icon: Network },
   { id: 'code_units', label: 'Code units', icon: Code2 },
   { id: 'test_cases', label: 'Test cases', icon: FlaskConical },
+  { id: 'delivery_assets', label: 'Delivery assets', icon: PackageCheck },
   { id: 'checklist', label: 'Definition of Done', icon: ListChecks },
   { id: 'traceability', label: 'Traceability', icon: GitBranch },
   { id: 'summary', label: 'Implementation summary', icon: FileText },
@@ -43,16 +46,26 @@ const FIELDS = {
     { key: 'item', label: 'Item' },
     { key: 'category', label: 'Category', ...SELECT(['code', 'tests', 'docs', 'security', 'review', 'deploy']) },
   ],
+  delivery_asset: [
+    { key: 'name', label: 'Delivery asset' },
+    { key: 'asset_type', label: 'Type', ...SELECT(['ci_pipeline', 'code_review', 'iac', 'release_package']) },
+    { key: 'location', label: 'Repository / pipeline / package URL' },
+    { key: 'description', label: 'Evidence / release notes', type: 'textarea' },
+    { key: 'owner', label: 'Owner' },
+    { key: 'status', label: 'Status', ...SELECT(['planned', 'ready', 'verified', 'released']) },
+  ],
 }
 const DEFAULTS = {
   code_unit: { name: '', unit_type: 'class', responsibility: '', tech: '', path: '', complexity: 'medium', status: 'todo' },
   test_case: { name: '', test_type: 'unit', scenario: '', expected: '', status: 'planned' },
   checklist: { item: '', category: 'code', done: false },
+  delivery_asset: { name: '', asset_type: 'ci_pipeline', location: '', description: '', owner: '', status: 'planned' },
 }
 const API = {
   code_unit: { create: 'createL4CodeUnit', update: 'updateL4CodeUnit', del: 'deleteL4CodeUnit', nameKey: 'name' },
   test_case: { create: 'createL4TestCase', update: 'updateL4TestCase', del: 'deleteL4TestCase', nameKey: 'name' },
   checklist: { create: 'createL4Checklist', update: 'updateL4Checklist', del: 'deleteL4Checklist', nameKey: 'item' },
+  delivery_asset: { create: 'createL4DeliveryAsset', update: 'updateL4DeliveryAsset', del: 'deleteL4DeliveryAsset', nameKey: 'name' },
 }
 const PILL = (v) => `res-pill ${['high', 'failing', 'todo'].includes(v) ? 'sub-partiallyallocated' : ['low', 'passing', 'done'].includes(v) ? 'ok' : ''}`
 
@@ -138,9 +151,10 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
     try { setTrace(await api.l4Traceability(projectId, l4Id)) } catch (err) { fail(err); setTrace(null) }
   }
 
-  if (elements.length === 0) {
-    return <div className="l1-empty-panel prominent"><Code2 size={38} /><h2>No L4 task yet</h2><p>Create an L4 task on the C4 canvas first (a child of an L3 component). It becomes the anchor for implementation detail.</p><button className="m3-btn filled" onClick={onOpenCanvas}>Open C4 canvas</button></div>
-  }
+  if (elements.length === 0) return <>
+    <LevelNavigator elements={allElements} activeLevel="L4" onNavigate={onOpenElement} onOpenCanvas={onOpenCanvas} />
+    <div className="l1-empty-panel prominent"><Code2 size={38} /><h2>No L4 task yet</h2><p>Create an L4 task on the C4 canvas first (a child of an L3 component). It becomes the anchor for implementation detail.</p><button className="m3-btn filled" onClick={() => onOpenCanvas?.()}>Open C4 canvas</button></div>
+  </>
 
   return <div className="l1-planning">
     {error && <div className="m3-banner error"><span>{String(error.message || error)}</span><button className="m3-btn text small" onClick={() => setError(null)}>Dismiss</button></div>}
@@ -152,6 +166,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
           <LevelBreadcrumb elements={allElements} elementId={l4Id} onNavigate={onOpenElement} /></div>
       </div>
       <div className="l1-plan-tools">
+        <button className="m3-btn text small" onClick={() => onOpenCanvas?.(l4Id)}><Network size={15} /> View in C4</button>
         <button className="m3-btn tonal small" disabled={!ws} title="Copy a self-contained implementation brief for a coding agent or ticket"
           onClick={() => { navigator.clipboard?.writeText(buildDevHandoff(ws)); toast.success('Dev handoff copied — paste it into your coding agent or ticket') }}>
           <ClipboardCopy size={14} /> Copy dev handoff</button>
@@ -167,7 +182,10 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
       </div>
     </header>
 
+    <LevelNavigator elements={allElements} elementId={l4Id} activeLevel="L4" onNavigate={onOpenElement} onOpenCanvas={onOpenCanvas} />
+
     {ws && <>
+      <LevelDefinition definition={ws.level_definition} />
       <div className="l1arch-head"><ReadinessCard readiness={ws.readiness} /></div>
       <nav className="l1arch-tabs" aria-label="L4 sections">
         {TABS.map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => (id === 'summary' ? openSummary() : id === 'traceability' ? openTraceability() : setTab(id))}><Icon size={15} /> {label}</button>)}
@@ -198,6 +216,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
 
       {tab === 'code_units' && <ArtifactTab entity="code_unit" title="Code Units" columns={['name', 'unit_type', 'tech', 'path', 'complexity', 'status']} rows={ws.code_units} onAdd={() => openDialog('code_unit')} onEdit={openDialog} onDelete={removeEntity} />}
       {tab === 'test_cases' && <ArtifactTab entity="test_case" title="Test Cases" columns={['name', 'test_type', 'scenario', 'status']} rows={ws.test_cases} onAdd={() => openDialog('test_case')} onEdit={openDialog} onDelete={removeEntity} />}
+      {tab === 'delivery_assets' && <ArtifactTab entity="delivery_asset" title="CI, Code Review, Infrastructure as Code & Release Package" columns={['name', 'asset_type', 'location', 'owner', 'status']} rows={ws.delivery_assets} onAdd={() => openDialog('delivery_asset')} onEdit={openDialog} onDelete={removeEntity} />}
 
       {tab === 'checklist' && <div className="l1arch-panel">
         <div className="l1arch-section-head"><h3>Definition of Done <small>{ws.checklist.filter((c) => c.done).length}/{ws.checklist.length} done</small></h3>
@@ -248,7 +267,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
       actions={<><button className="m3-btn text" onClick={() => setAi(null)}>Cancel</button><button className="m3-btn filled" disabled={busy} onClick={applyAi}>Apply all</button></>}>
       <div className="m3-banner info">{ai.draft.summary}</div>
       <div className="ai-baseline-preview">
-        <p><strong>{ai.draft.code_units.length}</strong> code units · <strong>{ai.draft.test_cases.length}</strong> tests · <strong>{ai.draft.checklist.length}</strong> DoD items</p>
+        <p><strong>{ai.draft.code_units.length}</strong> code units · <strong>{ai.draft.test_cases.length}</strong> tests · <strong>{ai.draft.delivery_assets?.length || 0}</strong> delivery assets · <strong>{ai.draft.checklist.length}</strong> DoD items</p>
         {ai.draft.code_diagram && <MermaidView source={ai.draft.code_diagram} fit="width" />}
       </div>
     </PlanningDialog>}

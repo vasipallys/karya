@@ -7,11 +7,13 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from backend.api.main import app
 from backend.c4 import store as c4_store
 from backend.c4.models import C4ElementCreate
 from backend.l4arch import service, store
-from backend.l4arch.models import ChecklistCreate, ChecklistUpdate, CodeUnitCreate, L4Update, TestCaseCreate
+from backend.l4arch.models import ChecklistCreate, ChecklistUpdate, CodeUnitCreate, DeliveryAssetCreate, L4Update, TestCaseCreate
 from backend.projects.models import ProjectCreate
 from backend.projects.store import create_project
 from backend.storage import db
@@ -53,11 +55,37 @@ def test_artifact_crud_and_checklist_bool():
     store.create_code_unit(project_id, l4, CodeUnitCreate(name="Controller", responsibility="handle"))
     store.create_test_case(project_id, l4, TestCaseCreate(name="rejects invalid", test_type="unit"))
     item = store.create_checklist_item(project_id, l4, ChecklistCreate(item="Code written", category="code", done=True))
+    asset = store.create_delivery_asset(project_id, l4, DeliveryAssetCreate(name="CI", asset_type="ci_pipeline", location="pipelines/build.yml"))
     assert item["done"] is True
     assert len(store.list_code_units(l4)) == 1
     assert len(store.list_test_cases(l4)) == 1
+    assert len(store.list_delivery_assets(l4)) == 1
     toggled = store.update_checklist_item(project_id, item["id"], ChecklistUpdate(done=False))
     assert toggled["done"] is False
+    store.delete_delivery_asset(project_id, asset["id"])
+    assert store.list_delivery_assets(l4) == []
+
+
+def test_delivery_asset_api_round_trip():
+    project_id, _, l4 = _scope()
+    path = f"/projects/{project_id}/l4/{l4}/arch/delivery-assets"
+    headers = {"X-User-Role": "admin"}
+    with TestClient(app) as client:
+        created = client.post(path, headers=headers, json={
+            "name": "Build pipeline",
+            "asset_type": "ci_pipeline",
+            "location": ".github/workflows/build.yml",
+        })
+        assert created.status_code == 200
+        item = created.json()
+        updated = client.patch(f"{path}/{item['id']}", headers=headers, json={"status": "verified"})
+        assert updated.status_code == 200
+        assert updated.json()["status"] == "verified"
+        workspace = client.get(f"/projects/{project_id}/l4/{l4}/arch", headers=headers)
+        assert workspace.status_code == 200
+        assert workspace.json()["delivery_assets"][0]["name"] == "Build pipeline"
+        deleted = client.delete(f"{path}/{item['id']}", headers=headers)
+        assert deleted.status_code == 200
 
 
 def test_readiness_progression_and_weights():
@@ -67,9 +95,11 @@ def test_readiness_progression_and_weights():
     store.create_code_unit(project_id, l4, CodeUnitCreate(name="Controller", responsibility="handle"))
     store.create_test_case(project_id, l4, TestCaseCreate(name="t", test_type="unit"))
     store.create_checklist_item(project_id, l4, ChecklistCreate(item="done", category="code", done=True))
+    for asset_type in ("ci_pipeline", "code_review", "iac", "release_package"):
+        store.create_delivery_asset(project_id, l4, DeliveryAssetCreate(name=asset_type, asset_type=asset_type))
     result = service.readiness(project_id, l4)
     assert result["score"] >= 80
-    assert len(result["areas"]) == 5
+    assert len(result["areas"]) == 6
     assert sum(a["weight"] for a in result["areas"]) == 100
 
 
@@ -77,11 +107,14 @@ def test_implementation_summary_markdown_mermaid():
     project_id, _, l4 = _scope()
     store.create_code_unit(project_id, l4, CodeUnitCreate(name="Controller", unit_type="class"))
     store.create_checklist_item(project_id, l4, ChecklistCreate(item="Tests pass", category="tests", done=True))
+    store.create_delivery_asset(project_id, l4, DeliveryAssetCreate(name="Release bundle", asset_type="release_package", location="releases/v1"))
     es = service.implementation_summary(project_id, l4)
     assert es["markdown"].startswith("# PayController.create")
     assert "```mermaid" in es["markdown"]
     assert "## Definition of Done" in es["markdown"]
     assert "- [x]" in es["markdown"]
+    assert "## Delivery & Release Assets" in es["markdown"]
+    assert "Release bundle" in es["markdown"]
 
 
 def test_traceability_l2_l3_l4_chain():
@@ -104,3 +137,4 @@ async def test_ai_generate_and_apply_l4():
     assert result["code_units"] == len(draft.code_units)
     assert store.get_l4(project_id, l4)["code_diagram"] == draft.code_diagram
     assert len(store.list_checklist(l4)) == len(draft.checklist)
+    assert len(store.list_delivery_assets(l4)) == len(draft.delivery_assets)

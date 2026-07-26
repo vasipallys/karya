@@ -7,10 +7,11 @@ from typing import Any
 
 # Implementation-readiness weighted areas (sum = 100) — lean, execution-focused.
 AREA_WEIGHTS = {
-    "l3_alignment": 15,
-    "code_units": 25,
-    "test_coverage": 25,
-    "dod_checklist": 25,
+    "l3_alignment": 10,
+    "code_units": 20,
+    "test_coverage": 20,
+    "delivery_assets": 25,
+    "dod_checklist": 15,
     "diagram": 10,
 }
 
@@ -24,20 +25,25 @@ def readiness(project_id: str, l4_element_id: str, workspace: dict[str, Any] | N
             "code_units": store.list_code_units(l4_element_id),
             "test_cases": store.list_test_cases(l4_element_id),
             "checklist": store.list_checklist(l4_element_id),
+            "delivery_assets": store.list_delivery_assets(l4_element_id),
         }
     arch = workspace["arch"]
     code_units = workspace["code_units"]
     test_cases = workspace["test_cases"]
     checklist = workspace["checklist"]
+    delivery_assets = workspace.get("delivery_assets", [])
 
     has_diagram = bool((arch["code_diagram"] or "").strip())
     described = [u for u in code_units if (u["responsibility"] or "").strip()]
     dod_done = [c for c in checklist if c["done"]]
+    asset_types = {asset["asset_type"] for asset in delivery_assets}
+    required_assets = {"ci_pipeline", "code_review", "iac", "release_package"}
 
     areas = {
         "l3_alignment": 1.0 if workspace.get("parent") else 0.5,
         "code_units": min(1.0, len(described) / max(1, len(code_units))) if code_units else 0.0,
         "test_coverage": 1.0 if test_cases else 0.0,
+        "delivery_assets": len(asset_types & required_assets) / len(required_assets),
         "dod_checklist": (len(dod_done) / len(checklist)) if checklist else 0.0,
         "diagram": 1.0 if has_diagram else 0.0,
     }
@@ -48,6 +54,10 @@ def readiness(project_id: str, l4_element_id: str, workspace: dict[str, Any] | N
         ("Code units are identified", len(code_units) >= 1),
         ("Responsibilities documented per unit", len(described) >= 1 and len(described) == len(code_units)),
         ("Test cases are planned", len(test_cases) >= 1),
+        ("CI pipeline is linked", "ci_pipeline" in asset_types),
+        ("Code review / PR evidence is linked", "code_review" in asset_types),
+        ("Infrastructure as Code is linked", "iac" in asset_types),
+        ("Release package is linked", "release_package" in asset_types),
         ("Definition-of-Done checklist started", len(checklist) >= 1),
         ("Definition-of-Done complete", len(checklist) >= 1 and len(dod_done) == len(checklist)),
         ("Class/sequence diagram drafted", has_diagram),
@@ -55,6 +65,7 @@ def readiness(project_id: str, l4_element_id: str, workspace: dict[str, Any] | N
     rec_for = {
         "code_units": "Break the task into code units (classes/functions) with responsibilities.",
         "test_coverage": "Add the test cases (unit/integration) that will prove the task.",
+        "delivery_assets": "Link CI, code review, IaC, and the release package as delivery evidence.",
         "dod_checklist": "Work through the Definition-of-Done checklist items.",
         "diagram": "Draft a class or sequence diagram for the implementation.",
         "l3_alignment": "Link this L4 task under an L3 component on the C4 canvas.",
@@ -116,6 +127,7 @@ def implementation_summary(project_id: str, l4_element_id: str) -> dict[str, Any
     code_units = workspace["code_units"]
     test_cases = workspace["test_cases"]
     checklist = workspace["checklist"]
+    delivery_assets = workspace["delivery_assets"]
     readiness_data = workspace["readiness"]
     name = element["name"]
 
@@ -139,6 +151,11 @@ def implementation_summary(project_id: str, l4_element_id: str) -> dict[str, Any
     md.append(_table(["Test", "Type", "Scenario", "Expected", "Status"],
                      [[t["name"], t["test_type"], t["scenario"], t["expected"], t["status"]] for t in test_cases]) + "\n"
               if test_cases else "_No test cases planned yet._\n")
+
+    md.append("## Delivery & Release Assets\n")
+    md.append(_table(["Asset", "Type", "Location", "Description", "Owner", "Status"],
+                     [[a["name"], a["asset_type"], a["location"], a["description"], a["owner"], a["status"]] for a in delivery_assets]) + "\n"
+              if delivery_assets else "_No CI, review, IaC, or release-package evidence linked yet._\n")
 
     md.append("## Definition of Done\n")
     if checklist:

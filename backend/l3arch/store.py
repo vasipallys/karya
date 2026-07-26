@@ -6,6 +6,8 @@ import json
 from typing import Any
 
 from backend.l3arch.models import (
+    BehaviorViewCreate,
+    BehaviorViewUpdate,
     ComponentCreate,
     ComponentUpdate,
     ConcernCreate,
@@ -41,7 +43,7 @@ def _require_l3(conn: Any, project_id: str, l3_element_id: str) -> dict[str, Any
 _L3_DEFAULT = {"summary": "", "component_diagram": "", "raci": "{}", "status": "draft"}
 
 # RACI grid (component design responsibilities).
-RACI_ARTIFACTS = ("component_diagram", "component_breakdown", "interfaces", "dependencies",
+RACI_ARTIFACTS = ("component_diagram", "component_breakdown", "behavior_models", "interfaces", "dependencies",
                   "design_concerns", "security", "testing", "documentation")
 RACI_ROLES = ("product_owner", "tech_lead", "engineer", "security_engineer", "qa", "sre")
 
@@ -213,6 +215,27 @@ def delete_concern(project_id: str, item_id: str) -> None:
     _delete("l3_concerns", project_id, item_id)
 
 
+# ---- behavioral views (journeys, sequence, BPMN, ERD, test scenarios) ----
+
+_BEHAVIOR_VIEW_COLS = ["name", "view_type", "description", "mermaid_source", "reference_url", "owner", "status"]
+
+
+def list_behavior_views(l3_element_id: str) -> list[dict[str, Any]]:
+    return _list("l3_behavior_views", l3_element_id, "created_at")
+
+
+def create_behavior_view(project_id: str, l3_element_id: str, payload: BehaviorViewCreate) -> dict[str, Any]:
+    return _create("l3_behavior_views", project_id, l3_element_id, _BEHAVIOR_VIEW_COLS, payload.model_dump())
+
+
+def update_behavior_view(project_id: str, item_id: str, payload: BehaviorViewUpdate) -> dict[str, Any]:
+    return _update("l3_behavior_views", project_id, item_id, payload.model_dump(exclude_unset=True))
+
+
+def delete_behavior_view(project_id: str, item_id: str) -> None:
+    _delete("l3_behavior_views", project_id, item_id)
+
+
 # ---- RACI matrix ----
 
 def set_raci(project_id: str, l3_element_id: str, artifact: str, role: str, value: str) -> dict[str, Any]:
@@ -311,6 +334,7 @@ def approval_state(l3_element_id: str) -> dict[str, Any]:
 
 def get_workspace(project_id: str, l3_element_id: str) -> dict[str, Any]:
     from backend.l3arch.service import readiness
+    from backend.c4.taxonomy import level_definition
 
     with connect() as conn:
         element = _require_l3(conn, project_id, l3_element_id)
@@ -326,9 +350,11 @@ def get_workspace(project_id: str, l3_element_id: str) -> dict[str, Any]:
         "interfaces": list_interfaces(l3_element_id),
         "dependencies": list_dependencies(l3_element_id),
         "concerns": list_concerns(l3_element_id),
+        "behavior_views": list_behavior_views(l3_element_id),
         "approvals": approval_state(l3_element_id),
         "raci_artifacts": list(RACI_ARTIFACTS),
         "raci_roles": list(RACI_ROLES),
+        "level_definition": level_definition("L3"),
     }
     workspace["readiness"] = readiness(project_id, l3_element_id, workspace)
     return workspace

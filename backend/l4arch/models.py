@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 UnitType = Literal["class", "interface", "function", "module", "config", "migration", "test"]
 TestType = Literal["unit", "integration", "e2e", "contract", "manual"]
 ChecklistCategory = Literal["code", "tests", "docs", "security", "review", "deploy"]
+DeliveryAssetType = Literal["ci_pipeline", "code_review", "iac", "release_package"]
 
 
 class L4Update(BaseModel):
@@ -65,3 +66,21 @@ class ChecklistUpdate(BaseModel):
     item: str | None = Field(default=None, min_length=1, max_length=400)
     category: ChecklistCategory | None = None
     done: bool | None = None
+
+
+class DeliveryAssetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    asset_type: DeliveryAssetType
+    location: str = Field(default="", max_length=1000)
+    description: str = Field(default="", max_length=4000)
+    owner: str = Field(default="", max_length=160)
+    status: Literal["planned", "ready", "verified", "released"] = "planned"
+
+
+class DeliveryAssetUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    asset_type: DeliveryAssetType | None = None
+    location: str | None = Field(default=None, max_length=1000)
+    description: str | None = Field(default=None, max_length=4000)
+    owner: str | None = Field(default=None, max_length=160)
+    status: Literal["planned", "ready", "verified", "released"] | None = None

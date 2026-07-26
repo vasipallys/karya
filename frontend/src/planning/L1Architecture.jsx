@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import AiAssist from '../components/AiAssist'
 import FlowForward from '../components/FlowForward'
+import LevelDefinition from '../components/LevelDefinition'
 import MarkdownEditor, { MarkdownViewer, renderMermaidImages } from '../components/MarkdownEditor'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
@@ -228,6 +229,7 @@ export default function L1Architecture({ projectId, l1Id, setError }) {
   const v = vision || baseline.vision
 
   return <section className="l1arch">
+    <LevelDefinition definition={baseline.level_definition} />
     <div className="l1arch-head">
       <ReadinessCard readiness={readiness} />
       <div className="l1arch-head-actions">

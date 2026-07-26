@@ -15,6 +15,7 @@ class L2Update(BaseModel):
 
 class ContainerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    container_type: Literal["application", "service", "data_store", "platform", "cloud_resource", "job", "gateway"] = "service"
     capability: str = Field(default="", max_length=200)
     responsibilities: str = Field(default="", max_length=2000)
     owns_data: str = Field(default="", max_length=600)
@@ -26,6 +27,7 @@ class ContainerCreate(BaseModel):
 
 class ContainerUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    container_type: Literal["application", "service", "data_store", "platform", "cloud_resource", "job", "gateway"] | None = None
     capability: str | None = Field(default=None, max_length=200)
     responsibilities: str | None = Field(default=None, max_length=2000)
     owns_data: str | None = Field(default=None, max_length=600)

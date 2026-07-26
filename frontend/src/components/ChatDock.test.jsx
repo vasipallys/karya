@@ -131,6 +131,48 @@ describe('ChatDock', () => {
     expect(onOpenElement).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1', level: 'L2' }))
   })
 
+  it('renders tribes and squads as operating-plan records', async () => {
+    api.chatStream.mockImplementation(streamScript([
+      ['result', {
+        reply: 'Found **2** tribes and squads.', action: 'list_agile_units', mutation: null,
+        data: { items: [
+          { id: 'u1', unit_type: 'tribe', name: 'Growth Tribe', members: 1, lead_name: 'Morgan', l1_name: 'Smart Banking' },
+          { id: 'u2', unit_type: 'squad', name: 'Checkout Squad', members: 4, lead_name: '', l1_name: 'Smart Banking' },
+        ] },
+      }],
+    ]))
+    renderDock()
+    openDock()
+    type('show tribes and squads')
+
+    await screen.findByText('Growth Tribe')
+    expect(screen.getByText('Checkout Squad')).toBeInTheDocument()
+    expect(screen.getByText(/1 people.*Morgan.*Smart Banking/)).toBeInTheDocument()
+  })
+
+  it('opens the owning L1 plan after applying a tribe proposal', async () => {
+    const mutation = {
+      action: 'create_agile_unit', unit_type: 'tribe', name: 'Growth Tribe',
+      scope: 'Smart Banking', summary: 'Create tribe “Growth Tribe” in “Smart Banking”',
+    }
+    api.chatStream.mockImplementation(streamScript([
+      ['result', { reply: 'Review and apply.', action: 'create_agile_unit', data: null, mutation }],
+    ]))
+    api.chatApply.mockResolvedValue({
+      reply: 'Created tribe “Growth Tribe”.',
+      result: { id: 'u1', name: 'Growth Tribe', unit_type: 'tribe', workspace: 'planning', l1_id: 'l1a' },
+    })
+    const onNavigate = vi.fn()
+    renderDock({ onNavigate })
+    openDock()
+    type('create a tribe called Growth Tribe')
+
+    fireEvent.click(await screen.findByRole('button', { name: /apply/i }))
+    const openPlan = await screen.findByRole('button', { name: /open operating plan/i })
+    fireEvent.click(openPlan)
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ workspace: 'planning', l1_id: 'l1a' }))
+  })
+
   it('renders item-by-item readiness for a level status question', async () => {
     api.chatStream.mockImplementation(streamScript([
       ['result', {

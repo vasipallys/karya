@@ -11,6 +11,7 @@ Direction = Literal["provided", "consumed"]
 InterfaceType = Literal["REST", "GraphQL", "gRPC", "Event", "Function", "Message"]
 DependencyType = Literal["internal", "container", "external", "library"]
 ConcernCategory = Literal["logging", "caching", "validation", "security", "error_handling", "config", "observability", "resilience"]
+BehaviorViewType = Literal["user_journey", "sequence_flow", "bpmn", "erd", "test_scenario"]
 
 
 class L3Update(BaseModel):
@@ -91,3 +92,23 @@ class ConcernUpdate(BaseModel):
     approach: str | None = Field(default=None, max_length=1000)
     owner: str | None = Field(default=None, max_length=160)
     status: Literal["planned", "implemented", "gap"] | None = None
+
+
+class BehaviorViewCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    view_type: BehaviorViewType
+    description: str = Field(default="", max_length=4000)
+    mermaid_source: str = Field(default="", max_length=50000)
+    reference_url: str = Field(default="", max_length=1000)
+    owner: str = Field(default="", max_length=160)
+    status: Literal["draft", "reviewed", "approved"] = "draft"
+
+
+class BehaviorViewUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    view_type: BehaviorViewType | None = None
+    description: str | None = Field(default=None, max_length=4000)
+    mermaid_source: str | None = Field(default=None, max_length=50000)
+    reference_url: str | None = Field(default=None, max_length=1000)
+    owner: str | None = Field(default=None, max_length=160)
+    status: Literal["draft", "reviewed", "approved"] | None = None

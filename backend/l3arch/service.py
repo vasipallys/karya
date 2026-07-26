@@ -8,11 +8,12 @@ from typing import Any
 # Component-design weighted areas (sum = 100).
 AREA_WEIGHTS = {
     "l2_alignment": 10,
-    "component_diagram": 15,
-    "component_breakdown": 15,
+    "component_diagram": 10,
+    "component_breakdown": 10,
+    "behavior_models": 15,
     "interfaces": 15,
     "dependencies": 10,
-    "design_concerns": 15,
+    "design_concerns": 10,
     "security_review": 10,
     "people_raci": 5,
     "approval": 5,
@@ -29,22 +30,30 @@ def readiness(project_id: str, l3_element_id: str, workspace: dict[str, Any] | N
             "interfaces": store.list_interfaces(l3_element_id),
             "dependencies": store.list_dependencies(l3_element_id),
             "concerns": store.list_concerns(l3_element_id),
+            "behavior_views": store.list_behavior_views(l3_element_id),
         }
     arch = workspace["arch"]
     components = workspace["components"]
     interfaces = workspace["interfaces"]
     dependencies = workspace["dependencies"]
     concerns = workspace["concerns"]
+    behavior_views = workspace.get("behavior_views", [])
 
     has_diagram = bool((arch["component_diagram"] or "").strip()) or len(components) >= 1
     detailed = [c for c in components if (c["responsibilities"] or "").strip()]
     security_concern = any(c["category"] == "security" for c in concerns)
     owned = [c for c in components if (c["owner"] or "").strip()]
+    behavior_types = {view["view_type"] for view in behavior_views}
+    journey_or_sequence = bool(behavior_types & {"user_journey", "sequence_flow"})
+    process_or_data = bool(behavior_types & {"bpmn", "erd"})
+    test_scenarios = "test_scenario" in behavior_types
+    behavior_score = sum((journey_or_sequence, process_or_data, test_scenarios)) / 3
 
     areas = {
         "l2_alignment": 1.0 if workspace.get("parent") else 0.5,
         "component_diagram": 1.0 if has_diagram else 0.0,
         "component_breakdown": min(1.0, len(detailed) / max(1, len(components))) if components else 0.0,
+        "behavior_models": behavior_score,
         "interfaces": 1.0 if interfaces else 0.0,
         "dependencies": 1.0 if dependencies else 0.0,
         "design_concerns": 1.0 if concerns else 0.0,
@@ -59,6 +68,9 @@ def readiness(project_id: str, l3_element_id: str, workspace: dict[str, Any] | N
         ("Component diagram is created", has_diagram),
         ("Core components are named", len(components) >= 1),
         ("Responsibilities documented per component", len(detailed) >= 1 and len(detailed) == len(components)),
+        ("User journey or sequence flow captured", journey_or_sequence),
+        ("BPMN process or ERD data model captured", process_or_data),
+        ("Behavioral test scenarios captured", test_scenarios),
         ("Provided/consumed interfaces captured", len(interfaces) >= 1),
         ("Dependencies mapped", len(dependencies) >= 1),
         ("Design concerns addressed (logging, caching, validation…)", len(concerns) >= 1),
@@ -69,6 +81,7 @@ def readiness(project_id: str, l3_element_id: str, workspace: dict[str, Any] | N
     rec_for = {
         "component_diagram": "Draft the component diagram (or add components to auto-generate one).",
         "component_breakdown": "Give each component clear responsibilities and a type.",
+        "behavior_models": "Capture a journey/sequence, BPMN or ERD, and behavioral test scenarios.",
         "interfaces": "Capture the interfaces each component provides/consumes with their contracts.",
         "dependencies": "Map the internal, container and external dependencies.",
         "design_concerns": "Address cross-cutting concerns (logging, caching, validation, error handling).",
@@ -130,6 +143,7 @@ def engineering_summary(project_id: str, l3_element_id: str) -> dict[str, Any]:
     interfaces = workspace["interfaces"]
     dependencies = workspace["dependencies"]
     concerns = workspace["concerns"]
+    behavior_views = workspace["behavior_views"]
     readiness_data = workspace["readiness"]
     name = element["name"]
 
@@ -148,6 +162,15 @@ def engineering_summary(project_id: str, l3_element_id: str) -> dict[str, Any]:
     md.append(_table(["Component", "Type", "Responsibilities", "Tech", "Pattern", "Owner"],
                      [[c["name"], c["component_type"], c["responsibilities"], c["tech"], c["pattern"], c["owner"]] for c in components]) + "\n"
               if components else "_No components defined yet._\n")
+
+    md.append("## Behavioral Models\n")
+    md.append(_table(["View", "Type", "Description", "Owner", "Status", "Reference"],
+                     [[v["name"], v["view_type"], v["description"], v["owner"], v["status"], v["reference_url"]] for v in behavior_views]) + "\n"
+              if behavior_views else "_No user journeys, sequence flows, BPMN, ERD, or test scenarios captured yet._\n")
+    for view in behavior_views:
+        source = (view["mermaid_source"] or "").strip()
+        if source:
+            md.append(f"### {view['name']}\n\n```mermaid\n{source}\n```\n")
 
     md.append("## Interfaces & Contracts\n")
     md.append(_table(["Interface", "Direction", "Type", "Contract", "Counterpart", "Auth"],

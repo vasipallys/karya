@@ -9,6 +9,8 @@ from backend.l4arch.models import (
     ChecklistUpdate,
     CodeUnitCreate,
     CodeUnitUpdate,
+    DeliveryAssetCreate,
+    DeliveryAssetUpdate,
     L4Update,
     TestCaseCreate,
     TestCaseUpdate,
@@ -184,10 +186,32 @@ def delete_checklist_item(project_id: str, item_id: str) -> None:
     _delete("l4_checklist", project_id, item_id)
 
 
+# ---- delivery/change assets (CI, review, IaC, release package) ----
+
+_DELIVERY_ASSET_COLS = ["name", "asset_type", "location", "description", "owner", "status"]
+
+
+def list_delivery_assets(l4_element_id: str) -> list[dict[str, Any]]:
+    return _list("l4_delivery_assets", l4_element_id, "created_at")
+
+
+def create_delivery_asset(project_id: str, l4_element_id: str, payload: DeliveryAssetCreate) -> dict[str, Any]:
+    return _create("l4_delivery_assets", project_id, l4_element_id, _DELIVERY_ASSET_COLS, payload.model_dump())
+
+
+def update_delivery_asset(project_id: str, item_id: str, payload: DeliveryAssetUpdate) -> dict[str, Any]:
+    return _update("l4_delivery_assets", project_id, item_id, payload.model_dump(exclude_unset=True))
+
+
+def delete_delivery_asset(project_id: str, item_id: str) -> None:
+    _delete("l4_delivery_assets", project_id, item_id)
+
+
 # ---- aggregate ----
 
 def get_workspace(project_id: str, l4_element_id: str) -> dict[str, Any]:
     from backend.l4arch.service import readiness
+    from backend.c4.taxonomy import level_definition
 
     with connect() as conn:
         element = _require_l4(conn, project_id, l4_element_id)
@@ -202,6 +226,8 @@ def get_workspace(project_id: str, l4_element_id: str) -> dict[str, Any]:
         "code_units": list_code_units(l4_element_id),
         "test_cases": list_test_cases(l4_element_id),
         "checklist": list_checklist(l4_element_id),
+        "delivery_assets": list_delivery_assets(l4_element_id),
+        "level_definition": level_definition("L4"),
     }
     workspace["readiness"] = readiness(project_id, l4_element_id, workspace)
     return workspace

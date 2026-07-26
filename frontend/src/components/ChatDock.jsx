@@ -10,7 +10,7 @@ const SUGGESTIONS = [
   "What's the project status?",
   'What should I do next?',
   'List L2 containers',
-  'Create an L2 container called payments',
+  'Create a tribe for this initiative',
 ]
 
 const CHAT_MODES = [
@@ -24,12 +24,12 @@ const CHAT_MODES = [
 
 // Floating conversational assistant: query / report over the project, and propose
 // C4 changes that the user applies with one click (writes need platform.edit).
-export default function ChatDock({ projectId, onChanged, onOpenElement, screenContext = null }) {
+export default function ChatDock({ projectId, onChanged, onOpenElement, onNavigate, screenContext = null }) {
   const toast = useToast()
   const { can } = useAuth()
   const canEdit = can('platform.edit')
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState([{ role: 'assistant', text: "Hi! Ask me about this platform, or tell me to create, rename or delete an element. I'll propose changes before anything is saved." }])
+  const [messages, setMessages] = useState([{ role: 'assistant', text: "Hi! Ask about this platform or instruct me to update its C4 model or operating plan—including tribes, squads, and team members. I’ll show a reviewable proposal before any write." }])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [conversationId, setConversationId] = useState(null)
@@ -242,6 +242,10 @@ export default function ChatDock({ projectId, onChanged, onOpenElement, screenCo
                     <button className="chatdock-link chatdock-open" onClick={() => onOpenElement(m.result)}>
                       <ArrowUpRight size={13} /> Open “{m.result.name}”</button>
                   )}
+                  {m.applied && m.result?.workspace && onNavigate && (
+                    <button className="chatdock-link chatdock-open" onClick={() => onNavigate(m.result)}>
+                      <ArrowUpRight size={13} /> Open operating plan</button>
+                  )}
                   {m.mutation && (
                     <div className="chatdock-propose">
                       <div className="chatdock-propose-head"><Sparkles size={13} /> Proposed change</div>
@@ -315,6 +319,13 @@ function RichText({ text }) {
 }
 
 function DataView({ action, data, onOpen }) {
+  if (action === 'list_agile_units' && data.items) {
+    if (data.items.length === 0) return null
+    return <ul className="chatdock-list">{data.items.slice(0, 12).map((it) => (
+      <li key={it.id}><span className="chatdock-lvl">{it.unit_type}</span>
+        <span>{it.name}</span> <em>{it.members} people{it.lead_name ? ` · ${it.lead_name}` : ''} · {it.l1_name}</em></li>
+    ))}{data.items.length > 12 && <li>…and {data.items.length - 12} more</li>}</ul>
+  }
   if (action === 'list' && data.items) {
     if (data.items.length === 0) return null
     return <ul className="chatdock-list">{data.items.slice(0, 12).map((it, i) => (

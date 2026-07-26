@@ -4,8 +4,14 @@ import { api } from '../api/client'
 
 const ARTIFACT_LABEL = { initiative: 'Theme / initiative', epic: 'Epic', story: 'Story / feature', task: 'Task / sub-task', bug: 'Bug', tech_debt: 'Tech debt', arch_flow: 'Architecture flow' }
 const LEVEL_ARTIFACT = { L1: 'initiative', L2: 'epic', L3: 'story', L4: 'task' }
+const WORKSPACE = {
+  L1: { name: 'L1 plan', detail: 'Strategy, requirements, teams, work, cost, and architecture' },
+  L2: { name: 'L2 architecture', detail: 'Containers, APIs, NFRs, integrations, and governance' },
+  L3: { name: 'L3 architecture', detail: 'Components, interfaces, dependencies, and design concerns' },
+  L4: { name: 'L4 details', detail: 'Code units, test cases, Definition of Done, and handoff' },
+}
 
-export default function InspectorPanel({ projectId, element, config, hasCachedResult, onEstimate, onOpenL1Plan, onChanged, onDeleted }) {
+export default function InspectorPanel({ projectId, element, config, hasCachedResult, onEstimate, onOpenWorkspace, onChanged, onDeleted }) {
   const [description, setDescription] = useState('')
   const [error, setError] = useState(null)
   const [l1Plan, setL1Plan] = useState(null)
@@ -127,8 +133,19 @@ export default function InspectorPanel({ projectId, element, config, hasCachedRe
           <div><Blocks size={16} /><span><strong>{l1Plan?.diagrams.length || 0}</strong> technical views</span></div>
         </div>
         <p>{l1Plan?.work_items.length || 0} work packages · {l1Plan?.metrics.at_risk_work || 0} at risk · {l1Plan?.metrics.allocated_fte || 0} allocated FTE</p></>}
-      <button className="m3-btn filled l1-more-details" onClick={() => onOpenL1Plan?.(element.id)}>
-        More details <ArrowRight size={16} />
+      <button className="m3-btn filled l1-more-details" onClick={() => onOpenWorkspace?.(element)}>
+        Open L1 plan <ArrowRight size={16} />
+      </button>
+    </section>}
+
+    {element.level !== 'L1' && <section className={`c4-workspace-link level-${element.level}`} aria-label={`${WORKSPACE[element.level].name} link`}>
+      <div>
+        <span>Agile workspace</span>
+        <strong>{WORKSPACE[element.level].name}</strong>
+        <p>{WORKSPACE[element.level].detail}</p>
+      </div>
+      <button className="m3-btn tonal small" onClick={() => onOpenWorkspace?.(element)}>
+        Open workspace <ArrowRight size={15} />
       </button>
     </section>}
 
