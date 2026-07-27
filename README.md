@@ -79,6 +79,10 @@ npm run test:all
 npm run build
 ```
 
+Before a release, follow the [production readiness checklist](docs/production-readiness.md).
+The desktop/single-user and shared-web profiles have different security gates;
+the repository's local demo identity headers are not internet-facing authentication.
+
 ## Run modes: web and desktop
 
 Karya supports two runtimes that share the same React/FastAPI codebase:

@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 
 from backend.api.streaming import require_llm_config
 from backend.planning import diagram_ai, exports, requirements, store
@@ -216,13 +217,13 @@ async def export_requirement_document(
     payload: RequirementExportRequest,
 ) -> Response:
     if export_format == "docx":
-        content, filename = _run(
-            lambda: exports.word_export(project_id, document_id, payload.diagram_images)
+        content, filename = await run_in_threadpool(
+            lambda: _run(lambda: exports.word_export(project_id, document_id, payload.diagram_images))
         )
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     elif export_format == "pptx":
-        content, filename = _run(
-            lambda: exports.powerpoint_export(project_id, document_id, payload.diagram_images)
+        content, filename = await run_in_threadpool(
+            lambda: _run(lambda: exports.powerpoint_export(project_id, document_id, payload.diagram_images))
         )
         media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     else:

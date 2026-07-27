@@ -6,7 +6,8 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from starlette.concurrency import run_in_threadpool
 
 from backend.l1arch import exports, service, store
 from backend.l1arch.models import (
@@ -115,7 +116,13 @@ async def get_executive_summary(project_id: str, l1_element_id: str) -> dict[str
 
 
 class ExecExportRequest(BaseModel):
-    diagram_images: list[str] = Field(default_factory=list)
+    diagram_images: list[str] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def payload_size_is_bounded(self) -> "ExecExportRequest":
+        if sum(len(image) for image in self.diagram_images) > 28_000_000:
+            raise ValueError("Rendered diagram images must not exceed 28 MB in total")
+        return self
 
 
 _EXPORT_MEDIA = {
@@ -137,7 +144,7 @@ async def export_summary(project_id: str, l1_element_id: str, fmt: str, payload:
             return exports.executive_docx(project_id, l1_element_id, payload.diagram_images)
         return exports.executive_pptx(project_id, l1_element_id, payload.diagram_images)
 
-    content, filename = _run(build)
+    content, filename = await run_in_threadpool(lambda: _run(build))
     return Response(
         content,
         media_type=_EXPORT_MEDIA[fmt],

@@ -7,6 +7,7 @@ import LevelDefinition from '../components/LevelDefinition'
 import MarkdownEditor, { MarkdownViewer, renderMermaidImages } from '../components/MarkdownEditor'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
+import AiLevelDraftReview, { AI_DRAFT_SECTIONS } from './AiLevelDraftReview'
 
 const TABS = [
   { id: 'vision', label: 'Vision & OKRs', icon: Target },
@@ -158,7 +159,10 @@ export default function L1Architecture({ projectId, l1Id, setError }) {
 
   const runAi = async (brief = '') => {
     setAi({ loading: true })
-    try { const draft = await api.aiL1Baseline(projectId, l1Id, brief); setAi({ draft }); setDocImport(null) }
+    try {
+      const draft = await api.aiL1Baseline(projectId, l1Id, brief)
+      setAi({ draft, sections: AI_DRAFT_SECTIONS.L1.map((section) => section.key) }); setDocImport(null)
+    }
     catch (err) { fail(err); setAi(null) }
   }
 
@@ -189,11 +193,12 @@ export default function L1Architecture({ projectId, l1Id, setError }) {
       setSuggest(null); toast.success(`Added ${chosen.length} stakeholder(s)`); await load()
     } catch (err) { fail(err) } finally { setBusy(false) }
   }
-  const applyAi = async () => {
+  const applyAi = async (submitForReview = false) => {
     setBusy(true)
     try {
-      const result = await api.applyL1Baseline(projectId, l1Id, ai.draft)
-      setAi(null); toast.success(`Added ${Object.values(result).reduce((a, b) => a + b, 0)} items`); await load()
+      const result = await api.applyL1Baseline(projectId, l1Id, ai.draft, ai.sections, submitForReview)
+      const count = Object.entries(result).filter(([key]) => key !== 'submitted_for_review').reduce((sum, [, value]) => sum + value, 0)
+      setAi(null); toast.success(submitForReview ? `Saved ${count} items and submitted L1 for review` : `Saved ${count} draft items`); await load()
     } catch (err) { fail(err) } finally { setBusy(false) }
   }
 
@@ -353,14 +358,13 @@ export default function L1Architecture({ projectId, l1Id, setError }) {
       </div>
     </PlanningDialog>}
 
-    {ai?.draft && <PlanningDialog wide title="AI L1 baseline draft" onClose={() => setAi(null)}
-      actions={<><button className="m3-btn text" onClick={() => setAi(null)}>Cancel</button><button className="m3-btn filled" disabled={busy} onClick={applyAi}>Apply all</button></>}>
-      <div className="m3-banner info">{ai.draft.summary}</div>
-      <div className="ai-baseline-preview">
-        <p><strong>Vision:</strong> {ai.draft.vision_statement}</p>
-        <p><strong>{ai.draft.okrs.length}</strong> OKRs · <strong>{ai.draft.stakeholders.length}</strong> stakeholders · <strong>{ai.draft.capabilities.length}</strong> capabilities · <strong>{ai.draft.risks.length}</strong> risks</p>
-        <ul>{ai.draft.capabilities.map((c, i) => <li key={i}>{c.name}</li>)}</ul>
-      </div>
+    {ai?.draft && <PlanningDialog wide title="AI L1 context-grounded draft" onClose={() => setAi(null)}
+      actions={<><button className="m3-btn text" onClick={() => setAi(null)}>Dismiss</button>
+        <button className="m3-btn tonal" disabled={busy || !ai.sections.length} onClick={() => applyAi(false)}>Save selected as draft</button>
+        <button className="m3-btn filled" disabled={busy || !ai.sections.length} onClick={() => applyAi(true)}>Save &amp; submit for review</button></>}>
+      <AiLevelDraftReview level="L1" draft={ai.draft} selected={ai.sections}
+        onDraftChange={(draft) => setAi((current) => ({ ...current, draft }))}
+        onSelectedChange={(sections) => setAi((current) => ({ ...current, sections }))} />
     </PlanningDialog>}
 
     {docImport && <PlanningDialog wide title="Import from document" onClose={() => setDocImport(null)}

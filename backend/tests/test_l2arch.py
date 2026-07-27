@@ -159,8 +159,11 @@ async def test_ai_generate_and_apply_l2():
     project_id, _, l2 = _scope()
     draft = await agents.generate_l2_baseline(project_id, l2, "A customer onboarding platform.")
     assert draft.container_diagram and draft.containers and draft.apis and draft.nfrs
-    result = agents.apply_l2_baseline(project_id, l2, draft.model_dump())
+    assert draft.context and draft.context.source_level == "L1"
+    result = agents.apply_l2_baseline(project_id, l2, draft.model_dump(), submit_for_review=True)
     assert result["containers"] == len(draft.containers)
     assert store.get_l2(project_id, l2)["container_diagram"] == draft.container_diagram
     assert len(store.list_apis(l2)) == len(draft.apis)
     assert all(container["container_type"] for container in store.list_containers(l2))
+    assert all(container["status"] == "planned" for container in store.list_containers(l2))
+    assert store.approval_state(l2)["submitted"] is True

@@ -241,14 +241,18 @@ async def test_ai_generate_and_apply_baseline():
     project_id, l1 = _scope()
     draft = await agents.generate_l1_baseline(project_id, l1, "A digital retail banking platform.")
     assert draft.vision_statement
+    assert draft.context and draft.context.source_level == "Project"
+    assert draft.context.target_level == "L1"
     assert draft.okrs and draft.stakeholders and draft.capabilities and draft.risks
     # exactly one Accountable in the mock draft
     assert sum(1 for s in draft.stakeholders if s.raci == "Accountable") == 1
 
-    result = agents.apply_l1_baseline(project_id, l1, draft.model_dump())
+    result = agents.apply_l1_baseline(project_id, l1, draft.model_dump(), submit_for_review=True)
     assert result["okrs"] == len(draft.okrs)
     assert store.get_vision(project_id, l1)["vision_statement"] == draft.vision_statement
     assert len(store.list_capabilities(l1)) == len(draft.capabilities)
+    assert result["submitted_for_review"] == 1
+    assert store.approval_state(l1)["submitted"] is True
 
     # sections filter applies only the requested artifact types.
     project2, l1b = _scope()

@@ -125,6 +125,17 @@ class C4Scaffold(BaseModel):
 
 # ---- L1 architecture baseline generator ---------------------------------
 
+class DraftContext(BaseModel):
+    """Deterministic evidence attached after generation, never authored by the LLM."""
+
+    target_level: Literal["L1", "L2", "L3", "L4"]
+    target_name: str = Field(default="", max_length=200)
+    source_level: str = Field(default="", max_length=40)
+    source_name: str = Field(default="", max_length=200)
+    inherited_items: list[str] = Field(default_factory=list, max_length=40)
+    assumptions: list[str] = Field(default_factory=list, max_length=20)
+
+
 class DraftOkr(BaseModel):
     objective: str = Field(min_length=1, max_length=400)
     key_result: str = Field(default="", max_length=600)
@@ -207,6 +218,7 @@ class DraftIntegration(BaseModel):
 
 
 class L2Draft(BaseModel):
+    context: DraftContext | None = None
     summary: str = Field(default="", max_length=1600)
     container_diagram: str = Field(default="", max_length=8000)
     containers: list[DraftContainer] = Field(default_factory=list, max_length=20)
@@ -216,6 +228,7 @@ class L2Draft(BaseModel):
 
 
 class L1BaselineDraft(BaseModel):
+    context: DraftContext | None = None
     summary: str = Field(default="", max_length=1200)
     vision_statement: str = Field(default="", max_length=2000)
     business_problem: str = Field(default="", max_length=2000)
@@ -266,6 +279,7 @@ class DraftBehaviorView(BaseModel):
 
 
 class L3Draft(BaseModel):
+    context: DraftContext | None = None
     summary: str = Field(default="", max_length=1600)
     component_diagram: str = Field(default="", max_length=8000)
     components: list[DraftComponent] = Field(default_factory=list, max_length=20)
@@ -282,6 +296,7 @@ class DraftCodeUnit(BaseModel):
     unit_type: Literal["class", "interface", "function", "module", "config", "migration", "test"] = "class"
     responsibility: str = Field(default="", max_length=600)
     tech: str = Field(default="", max_length=200)
+    path: str = Field(default="", max_length=400)
     complexity: Literal["high", "medium", "low"] = "medium"
 
 
@@ -306,12 +321,15 @@ class DraftDeliveryAsset(BaseModel):
 
 
 class L4Draft(BaseModel):
+    context: DraftContext | None = None
     summary: str = Field(default="", max_length=1600)
-    code_diagram: str = Field(default="", max_length=8000)
+    code_diagram: str = Field(default="", max_length=20000)
     code_units: list[DraftCodeUnit] = Field(default_factory=list, max_length=25)
     test_cases: list[DraftTestCase] = Field(default_factory=list, max_length=25)
     checklist: list[DraftChecklistItem] = Field(default_factory=list, max_length=20)
     delivery_assets: list[DraftDeliveryAsset] = Field(default_factory=list, max_length=12)
+    traceability_mermaid: str = Field(default="", max_length=20000)
+    implementation_summary: str = Field(default="", max_length=50000)
 
 
 # ---- Conversational assistant -------------------------------------------

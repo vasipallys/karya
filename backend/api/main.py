@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
@@ -11,6 +12,7 @@ from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from backend.api.streaming import require_llm_config, stream_batch, stream_story
 from backend.c4.router import router as c4_router
@@ -45,6 +47,9 @@ from backend.reporting.router import router as reporting_router
 from backend.home.router import router as home_router
 from backend.resources.router import router as resources_router
 from backend.storage.db import checkpoint_path, init_db
+
+logger = logging.getLogger(__name__)
+_UPLOAD_LIMIT = 15 * 1024 * 1024
 
 
 def error_response(code: str, message: str, status: int, *, details: Any = None, retryable: bool = False) -> JSONResponse:
@@ -103,20 +108,36 @@ async def rbac_middleware(request: Request, call_next):
     UI-gating remains the primary control; this is defense in depth. OPTIONS
     (CORS preflight) and public config/login endpoints bypass the check.
     """
+    supplied_id = request.headers.get("X-Request-Id", "")
+    request_id = supplied_id[:128] if supplied_id and all(ch.isalnum() or ch in "-_." for ch in supplied_id) else str(uuid.uuid4())
+    request.state.request_id = request_id
+
     if request.method == "OPTIONS":
-        return await call_next(request)
-    requires_auth, capability = route_policy(request.method, request.url.path)
-    if requires_auth:
-        role = resolve_role(request)
-        if role is None:
-            return error_response("unauthenticated", "Sign in required.", 401)
-        required = capability if isinstance(capability, tuple) else ((capability,) if capability else ())
-        denied = next((item for item in required if not capability_allowed(request, role, item)), None)
-        if denied:
-            return error_response("forbidden", f"Your access does not permit this action ({denied}).", 403)
-        if restricted_block(request.url.path, role):
-            return error_response("forbidden", "This workspace is restricted to managers and admins.", 403)
-    return await call_next(request)
+        response = await call_next(request)
+    else:
+        requires_auth, capability = route_policy(request.method, request.url.path)
+        if requires_auth:
+            role = resolve_role(request)
+            if role is None:
+                response = error_response("unauthenticated", "Sign in required.", 401)
+            else:
+                required = capability if isinstance(capability, tuple) else ((capability,) if capability else ())
+                denied = next((item for item in required if not capability_allowed(request, role, item)), None)
+                if denied:
+                    response = error_response("forbidden", f"Your access does not permit this action ({denied}).", 403)
+                elif restricted_block(request.url.path, role):
+                    response = error_response("forbidden", "This workspace is restricted to managers and admins.", 403)
+                else:
+                    response = await call_next(request)
+        else:
+            response = await call_next(request)
+
+    response.headers["X-Request-Id"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), payment=()"
+    return response
 
 
 app.add_middleware(
@@ -125,7 +146,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition", "X-Request-Id"],
 )
 app.include_router(projects_router)
 app.include_router(c4_router)
@@ -146,7 +167,8 @@ app.include_router(integrations_router)
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
-    return error_response("validation_error", "The request contains invalid fields.", 422, details=exc.errors())
+    details = [{key: value for key, value in item.items() if key != "ctx"} for item in exc.errors()]
+    return error_response("validation_error", "The request contains invalid fields.", 422, details=details)
 
 
 @app.exception_handler(HTTPException)
@@ -186,6 +208,21 @@ async def local_model_inference_error(_: Request, exc: LocalModelInferenceError)
 @app.exception_handler(LLMInvocationError)
 async def llm_invocation_error(_: Request, exc: LLMInvocationError) -> JSONResponse:
     return error_response("llm_provider_error", str(exc), 502, retryable=exc.retryable)
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    logger.exception("Unhandled API error request_id=%s path=%s", request_id, request.url.path)
+    response = error_response(
+        "internal_error",
+        "The request could not be completed. Contact support with the request ID.",
+        500,
+        details={"request_id": request_id},
+        retryable=True,
+    )
+    response.headers["X-Request-Id"] = request_id
+    return response
 
 
 @app.get("/health")
@@ -231,10 +268,12 @@ async def jira_issues(
 
 @app.post("/upload/parse")
 async def parse_upload(file: UploadFile = File(...)) -> dict[str, Any]:
-    content = await file.read()
-    if len(content) > 15 * 1024 * 1024:
+    content = await file.read(_UPLOAD_LIMIT + 1)
+    if len(content) > _UPLOAD_LIMIT:
         raise UploadError("File exceeds the 15 MB upload limit")
-    return dataframe_payload(read_upload(content, file.filename or "upload"))
+    return await run_in_threadpool(
+        lambda: dataframe_payload(read_upload(content, file.filename or "upload"))
+    )
 
 
 @app.get("/upload/template")

@@ -131,10 +131,51 @@ async def test_ai_generate_and_apply_l4():
     from backend.ai import agents
 
     project_id, _, l4 = _scope()
+    diagram = "classDiagram\n  class PaymentController\n  class PaymentService\n  PaymentController --> PaymentService"
+    store.update_l4(project_id, l4, L4Update(code_diagram=diagram))
     draft = await agents.generate_l4_baseline(project_id, l4, "Implement the create endpoint.")
     assert draft.code_diagram and draft.code_units and draft.test_cases and draft.checklist
-    result = agents.apply_l4_baseline(project_id, l4, draft.model_dump())
+    assert draft.context and draft.context.source_level == "L3"
+    assert "Implementation diagram: authoritative" in draft.context.inherited_items
+    assert draft.code_diagram == diagram
+    assert {unit.name for unit in draft.code_units} >= {"PaymentController", "PaymentService"}
+    assert all(unit.path for unit in draft.code_units)
+    assert "L2 --> L3" in draft.traceability_mermaid
+    assert "## Proposed Code Units" in draft.implementation_summary
+    assert "## Proposed Deliverables" in draft.implementation_summary
+    assert "## Validated Traceability" in draft.implementation_summary
+    result = agents.apply_l4_baseline(project_id, l4, draft.model_dump(), submit_for_review=True)
     assert result["code_units"] == len(draft.code_units)
     assert store.get_l4(project_id, l4)["code_diagram"] == draft.code_diagram
     assert len(store.list_checklist(l4)) == len(draft.checklist)
     assert len(store.list_delivery_assets(l4)) == len(draft.delivery_assets)
+    assert store.get_l4(project_id, l4)["status"] == "reviewed"
+
+
+def test_ai_generate_l4_requires_an_implementation_diagram():
+    project_id, _, l4 = _scope()
+    with TestClient(app) as client:
+        response = client.post(
+            f"/projects/{project_id}/l4/{l4}/ai/l4",
+            headers={"X-User-Role": "admin"},
+            json={"brief": "Generate the plan."},
+        )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "implementation_diagram_required"
+
+
+def test_ai_generate_l4_accepts_the_current_unsaved_diagram():
+    project_id, _, l4 = _scope()
+    diagram = "sequenceDiagram\n  participant UI\n  participant PaymentAPI\n  UI->>PaymentAPI: create"
+    with TestClient(app) as client:
+        response = client.post(
+            f"/projects/{project_id}/l4/{l4}/ai/l4",
+            headers={"X-User-Role": "admin"},
+            json={"brief": "", "code_diagram": diagram},
+        )
+    assert response.status_code == 200
+    generated = response.json()
+    assert generated["code_diagram"] == diagram
+    assert {unit["name"] for unit in generated["code_units"]} >= {"UI", "PaymentAPI"}
+    assert generated["traceability_mermaid"]
+    assert "## Proposed Test Cases" in generated["implementation_summary"]

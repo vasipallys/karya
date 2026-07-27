@@ -41,6 +41,16 @@ export default function QuickEstimate({ config }) {
   const estimateBatch = async (stories) => { begin(); try { await api.estimateBatch(stories, onBatchEvent, controller.current.signal) } catch (err) { setError(err) } finally { end() } }
   const fetchJira = async (instance, project, filters) => { setError(null); setLoading(true); try { setIssues(await api.jiraIssues(instance, project, filters)) } catch (err) { setError(err) } finally { end() } }
   const parseFile = async (file) => { setError(null); setLoading(true); try { setUpload(await api.parseUpload(file)) } catch (err) { setError(err) } finally { end() } }
+  const downloadTemplate = async () => {
+    setError(null)
+    try {
+      const { blob, filename } = await api.downloadTemplate()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url; anchor.download = filename; anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (err) { setError(err) }
+  }
   const estimateUpload = async (rows, mapping) => { begin(); try { await api.estimateUpload(rows, mapping, onBatchEvent, controller.current.signal) } catch (err) { setError(err) } finally { end() } }
   const writePoints = async (item) => { if (!window.confirm(`Write ${item.points} points to ${item.story.key}? This changes Jira.`)) return; try { await api.writePoints(item.story.jira_instance, item.story.key, item.points); window.alert('Jira was updated.') } catch (err) { setError(err) } }
 
@@ -48,7 +58,7 @@ export default function QuickEstimate({ config }) {
     <SourceSwitcher value={source} onChange={(value) => { setSource(value); setError(null) }} />
     <ErrorCard error={error} />
     <div className="workspace">
-      <div>{source === 'manual' && <StoryForm onSubmit={estimateOne} disabled={loading} />}{source === 'jira' && <JiraBrowser instances={config?.jira_instances || []} issues={issues} onFetch={fetchJira} onEstimate={estimateBatch} loading={loading} />}{source === 'upload' && (upload ? <ColumnMapper upload={upload} onEstimate={estimateUpload} loading={loading} /> : <ExcelUpload onUpload={parseFile} templateUrl={api.templateUrl} loading={loading} />)}</div>
+      <div>{source === 'manual' && <StoryForm onSubmit={estimateOne} disabled={loading} />}{source === 'jira' && <JiraBrowser instances={config?.jira_instances || []} issues={issues} onFetch={fetchJira} onEstimate={estimateBatch} loading={loading} />}{source === 'upload' && (upload ? <ColumnMapper upload={upload} onEstimate={estimateUpload} loading={loading} /> : <ExcelUpload onUpload={parseFile} onDownloadTemplate={downloadTemplate} loading={loading} />)}</div>
       <PipelineView steps={steps} active={loading} title={pipelineTitle} />
     </div>
     {results.length > 0 && <BatchTable results={results} onSelect={setResult} />}

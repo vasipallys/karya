@@ -709,7 +709,9 @@ def _seed_resource_lookups(conn: sqlite3.Connection) -> None:
 def init_db(path: Path | None = None) -> None:
     target = path or db_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(target) as conn:
+    with sqlite3.connect(target, timeout=10) as conn:
+        conn.execute("PRAGMA busy_timeout=10000")
+        conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(_SCHEMA)
         _ensure_columns(conn, "l1_diagrams", {"metadata": "TEXT NOT NULL DEFAULT '{}'"})
@@ -734,8 +736,9 @@ def connect() -> Iterator[sqlite3.Connection]:
     target = db_path()
     if str(target) not in _initialized:
         init_db(target)
-    conn = sqlite3.connect(target)
+    conn = sqlite3.connect(target, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=10000")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn

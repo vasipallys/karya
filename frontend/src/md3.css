@@ -266,10 +266,24 @@ body.dockable-resizing { cursor: col-resize; user-select: none; }
 .behavior-preview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
 .behavior-preview-grid article { min-width: 0; padding: 12px; border: 1px solid var(--m3-outline-variant); border-radius: 12px; background: var(--m3-surface-container-lowest); }
 .behavior-preview-grid article > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.ai-l4-review { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.ai-l4-review > section { min-width: 0; padding: 14px; border: 1px solid var(--m3-outline-variant); border-radius: 14px; background: var(--m3-surface-container-lowest); }
+.ai-l4-review h3 { margin: 0 0 10px; font-size: 14px; }
+.ai-l4-review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ai-l4-generated-list { min-width: 0; padding: 12px; border: 1px solid var(--m3-outline-variant); border-radius: 12px; background: var(--m3-surface-container-low); }
+.ai-l4-generated-list h3 { display: flex; align-items: center; justify-content: space-between; }
+.ai-l4-generated-list h3 span { min-width: 24px; padding: 2px 7px; border-radius: 999px; background: var(--m3-primary-container); color: var(--m3-primary); font-size: 11px; text-align: center; }
+.ai-l4-generated-list ul { display: flex; flex-direction: column; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.ai-l4-generated-list li { min-width: 0; padding-top: 7px; border-top: 1px solid var(--m3-outline-variant); }
+.ai-l4-generated-list li:first-child { padding-top: 0; border-top: 0; }
+.ai-l4-generated-list strong, .ai-l4-generated-list small { display: block; overflow-wrap: anywhere; }
+.ai-l4-generated-list strong { font-size: 12px; }
+.ai-l4-generated-list small, .ai-l4-generated-list p { margin: 2px 0 0; color: var(--m3-on-surface-variant); font-size: 10px; line-height: 1.35; }
 @media (max-width: 720px) {
   .level-definition { align-items: stretch; flex-direction: column; gap: 10px; }
   .level-definition-outcomes { justify-content: flex-start; }
   .behavior-preview-grid { grid-template-columns: minmax(0, 1fr); }
+  .ai-l4-review-grid { grid-template-columns: minmax(0, 1fr); }
 }
 .m3-kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 13px; margin: 12px 0; }
 .m3-kv dt { color: var(--m3-on-surface-variant); } .m3-kv dd { margin: 0; word-break: break-word; }
@@ -940,3 +954,43 @@ button.home-tile.clickable:hover .home-tile-arrow { opacity: 1; transform: trans
 @media (max-width: 860px) {
   .home-columns { grid-template-columns: 1fr; }
 }
+
+/* Context-grounded AI drafts shared by L1-L4 */
+.ai-level-review { display: grid; gap: 14px; }
+.ai-level-review > .m3-banner { display: flex; align-items: flex-start; gap: 9px; }
+.ai-context-evidence { border: 1px solid #bdd8f4; background: #f5faff; border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+.ai-context-evidence header { display: flex; gap: 9px; align-items: center; color: #174d78; }
+.ai-context-evidence header div { display: grid; gap: 2px; }
+.ai-context-evidence header small { color: #536777; }
+.ai-context-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-context-chips span { border: 1px solid #cbd9e5; background: white; color: #334c60; border-radius: 999px; padding: 4px 9px; font-size: 12px; }
+.ai-context-chips em { color: #6d7880; font-size: 13px; }
+.ai-context-warning { display: flex; gap: 6px; align-items: center; margin: 0; color: #805500; font-size: 13px; }
+.ai-draft-sections { display: grid; gap: 10px; }
+.ai-draft-section { border: 1px solid #d7dde5; border-radius: 14px; overflow: hidden; background: white; }
+.ai-draft-section.excluded { background: #f6f7f8; opacity: .72; }
+.ai-draft-section > header { min-height: 44px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e6e9ed; }
+.ai-draft-section > header label { display: flex; align-items: center; gap: 8px; }
+.ai-draft-section > header small { color: #66727c; }
+.ai-draft-scalar-grid, .ai-draft-item-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; }
+.ai-draft-scalar-grid > label, .ai-draft-item-grid > label { display: grid; gap: 5px; min-width: 0; }
+.ai-draft-scalar-grid > label > span, .ai-draft-item-grid > label > span { color: #52606b; font-size: 12px; font-weight: 600; }
+.ai-draft-scalar-grid input, .ai-draft-scalar-grid textarea, .ai-draft-scalar-grid select,
+.ai-draft-item-grid input, .ai-draft-item-grid textarea, .ai-draft-item-grid select {
+  width: 100%; box-sizing: border-box; border: 1px solid #c8d0d9; border-radius: 9px; padding: 8px 9px; background: white; color: inherit; font: inherit;
+}
+.ai-draft-scalar-grid label:has(textarea), .ai-draft-item-grid label:has(textarea) { grid-column: 1 / -1; }
+.ai-draft-diagram { grid-column: 1 / -1; border: 1px solid #e0e5ea; border-radius: 10px; min-height: 160px; overflow: auto; padding: 8px; }
+.ai-draft-items { display: grid; gap: 8px; padding: 10px; }
+.ai-draft-items article { position: relative; border: 1px solid #e1e5e9; border-radius: 11px; background: #fbfcfd; }
+.ai-draft-items article > .m3-icon-btn { position: absolute; right: 6px; top: 5px; z-index: 1; }
+.ai-draft-items article .ai-draft-item-grid { padding-right: 44px; }
+@media (max-width: 760px) {
+  .ai-draft-scalar-grid, .ai-draft-item-grid { grid-template-columns: 1fr; }
+  .ai-draft-scalar-grid label:has(textarea), .ai-draft-item-grid label:has(textarea) { grid-column: auto; }
+}
+
+.fatal-error { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--m3-surface); color: var(--m3-on-surface); }
+.fatal-error > div { width: min(560px, 100%); padding: 28px; border: 1px solid var(--m3-outline-variant); border-radius: 20px; background: var(--m3-surface-dim); box-shadow: var(--m3-elevation-2); }
+.fatal-error h1 { margin: 0 0 10px; font-size: 25px; }
+.fatal-error p { margin: 0 0 20px; color: var(--m3-on-surface-variant); line-height: 1.55; }

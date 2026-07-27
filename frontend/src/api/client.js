@@ -22,6 +22,15 @@ function withAuth(options = {}) {
   return { ...options, headers: { ...authHeaders(), ...(options.headers || {}) } }
 }
 
+function finalizeError(error, response) {
+  error.requestId = response.headers.get('X-Request-Id') || error.payload?.details?.request_id || ''
+  if (error.requestId && response.status >= 500) error.message += ` Request ID: ${error.requestId}.`
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('karya:unauthorized'))
+  }
+  return error
+}
+
 async function jsonRequest(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, withAuth(options))
   const body = await response.json().catch(() => ({}))
@@ -29,7 +38,7 @@ async function jsonRequest(path, options = {}) {
     const detail = body.error || body.detail || body
     const error = new Error(detail.message || `Request failed (${response.status})`)
     error.payload = detail
-    throw error
+    throw finalizeError(error, response)
   }
   return body
 }
@@ -41,7 +50,7 @@ async function downloadRequest(path, options = {}) {
     const detail = body.error || body.detail || body
     const error = new Error(detail.message || `Request failed (${response.status})`)
     error.payload = detail
-    throw error
+    throw finalizeError(error, response)
   }
   const disposition = response.headers.get('Content-Disposition') || ''
   const filename = disposition.match(/filename="([^"]+)"/i)?.[1] || 'requirements-export'
@@ -60,26 +69,32 @@ export async function consumeSSE(path, payload, onEvent, signal) {
     const detail = body.error || body.detail || body
     const error = new Error(detail.message || `Request failed (${response.status})`)
     error.payload = detail
-    throw error
+    throw finalizeError(error, response)
   }
+  if (!response.body) throw new Error('The server returned an empty event stream.')
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  const emitBlock = (block) => {
+    if (!block.trim()) return
+    let event = 'message'
+    const data = []
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith('event:')) event = line.slice(6).trim()
+      if (line.startsWith('data:')) data.push(line.slice(5).trim())
+    }
+    if (data.length) onEvent(event, JSON.parse(data.join('\n')))
+  }
   while (true) {
     const { value, done } = await reader.read()
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
     const blocks = buffer.split(/\r?\n\r?\n/)
     buffer = blocks.pop() || ''
-    for (const block of blocks) {
-      let event = 'message'
-      const data = []
-      for (const line of block.split(/\r?\n/)) {
-        if (line.startsWith('event:')) event = line.slice(6).trim()
-        if (line.startsWith('data:')) data.push(line.slice(5).trim())
-      }
-      if (data.length) onEvent(event, JSON.parse(data.join('\n')))
+    blocks.forEach(emitBlock)
+    if (done) {
+      emitBlock(buffer)
+      break
     }
-    if (done) break
   }
 }
 
@@ -108,7 +123,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ points, confirm: true }),
     }),
-  templateUrl: `${API_BASE}/upload/template`,
+  downloadTemplate: () => downloadRequest('/upload/template'),
 
   listProjects: () => jsonRequest('/projects'),
   createProject: (payload) => json('/projects', 'POST', payload),
@@ -226,7 +241,7 @@ export const api = {
   updateL1Risk: (id, l1, itemId, payload) => json(`/projects/${id}/l1/${l1}/arch/risks/${itemId}`, 'PATCH', payload),
   deleteL1Risk: (id, l1, itemId) => jsonRequest(`/projects/${id}/l1/${l1}/arch/risks/${itemId}`, { method: 'DELETE' }),
   aiL1Baseline: (id, l1, brief) => json(`/projects/${id}/l1/${l1}/ai/baseline`, 'POST', { brief }),
-  applyL1Baseline: (id, l1, draft, sections) => json(`/projects/${id}/l1/${l1}/ai/baseline/apply`, 'POST', { draft, sections }),
+  applyL1Baseline: (id, l1, draft, sections, submitForReview = false) => json(`/projects/${id}/l1/${l1}/ai/baseline/apply`, 'POST', { draft, sections, submit_for_review: submitForReview }),
 
   // L1 approvals (governance)
   submitL1ForReview: (id, l1) => json(`/projects/${id}/l1/${l1}/arch/approvals/submit`, 'POST', {}),
@@ -267,7 +282,7 @@ export const api = {
   updateL2Integration: (id, l2, itemId, payload) => json(`/projects/${id}/l2/${l2}/arch/integrations/${itemId}`, 'PATCH', payload),
   deleteL2Integration: (id, l2, itemId) => jsonRequest(`/projects/${id}/l2/${l2}/arch/integrations/${itemId}`, { method: 'DELETE' }),
   aiL2Baseline: (id, l2, brief) => json(`/projects/${id}/l2/${l2}/ai/l2`, 'POST', { brief }),
-  applyL2Baseline: (id, l2, draft, sections) => json(`/projects/${id}/l2/${l2}/ai/l2/apply`, 'POST', { draft, sections }),
+  applyL2Baseline: (id, l2, draft, sections, submitForReview = false) => json(`/projects/${id}/l2/${l2}/ai/l2/apply`, 'POST', { draft, sections, submit_for_review: submitForReview }),
   l2Traceability: (id, l2) => jsonRequest(`/projects/${id}/l2/${l2}/arch/traceability`),
   setL2Raci: (id, l2, artifact, role, value) => json(`/projects/${id}/l2/${l2}/arch/raci`, 'PATCH', { artifact, role, value }),
   submitL2ForReview: (id, l2) => json(`/projects/${id}/l2/${l2}/arch/approvals/submit`, 'POST', {}),
@@ -294,7 +309,7 @@ export const api = {
   updateL3BehaviorView: (id, l3, itemId, payload) => json(`/projects/${id}/l3/${l3}/arch/behavior-views/${itemId}`, 'PATCH', payload),
   deleteL3BehaviorView: (id, l3, itemId) => jsonRequest(`/projects/${id}/l3/${l3}/arch/behavior-views/${itemId}`, { method: 'DELETE' }),
   aiL3Baseline: (id, l3, brief) => json(`/projects/${id}/l3/${l3}/ai/l3`, 'POST', { brief }),
-  applyL3Baseline: (id, l3, draft, sections) => json(`/projects/${id}/l3/${l3}/ai/l3/apply`, 'POST', { draft, sections }),
+  applyL3Baseline: (id, l3, draft, sections, submitForReview = false) => json(`/projects/${id}/l3/${l3}/ai/l3/apply`, 'POST', { draft, sections, submit_for_review: submitForReview }),
   l3Traceability: (id, l3) => jsonRequest(`/projects/${id}/l3/${l3}/arch/traceability`),
   setL3Raci: (id, l3, artifact, role, value) => json(`/projects/${id}/l3/${l3}/arch/raci`, 'PATCH', { artifact, role, value }),
   submitL3ForReview: (id, l3) => json(`/projects/${id}/l3/${l3}/arch/approvals/submit`, 'POST', {}),
@@ -316,8 +331,8 @@ export const api = {
   createL4DeliveryAsset: (id, l4, payload) => json(`/projects/${id}/l4/${l4}/arch/delivery-assets`, 'POST', payload),
   updateL4DeliveryAsset: (id, l4, itemId, payload) => json(`/projects/${id}/l4/${l4}/arch/delivery-assets/${itemId}`, 'PATCH', payload),
   deleteL4DeliveryAsset: (id, l4, itemId) => jsonRequest(`/projects/${id}/l4/${l4}/arch/delivery-assets/${itemId}`, { method: 'DELETE' }),
-  aiL4Baseline: (id, l4, brief) => json(`/projects/${id}/l4/${l4}/ai/l4`, 'POST', { brief }),
-  applyL4Baseline: (id, l4, draft, sections) => json(`/projects/${id}/l4/${l4}/ai/l4/apply`, 'POST', { draft, sections }),
+  aiL4Baseline: (id, l4, brief, codeDiagram = '') => json(`/projects/${id}/l4/${l4}/ai/l4`, 'POST', { brief, code_diagram: codeDiagram }),
+  applyL4Baseline: (id, l4, draft, sections, submitForReview = false) => json(`/projects/${id}/l4/${l4}/ai/l4/apply`, 'POST', { draft, sections, submit_for_review: submitForReview }),
   l4Traceability: (id, l4) => jsonRequest(`/projects/${id}/l4/${l4}/arch/traceability`),
 
   // Workflow guide

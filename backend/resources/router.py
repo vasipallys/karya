@@ -20,6 +20,7 @@ from backend.resources.models import (
 )
 
 router = APIRouter(prefix="/resources", tags=["resources"])
+_IMPORT_LIMIT = 15 * 1024 * 1024
 
 
 def _guard(operation: Any) -> Any:
@@ -73,10 +74,10 @@ async def import_template() -> Response:
 
 @router.post("/import/excel")
 async def import_excel(file: UploadFile = File(...), update_existing: bool = False) -> dict[str, Any]:
-    content = await file.read()
+    content = await file.read(_IMPORT_LIMIT + 1)
     if not content:
         raise HTTPException(status_code=400, detail={"code": "empty_file", "message": "The import file is empty."})
-    if len(content) > 15 * 1024 * 1024:
+    if len(content) > _IMPORT_LIMIT:
         raise HTTPException(status_code=413, detail={"code": "file_too_large", "message": "Resource imports are limited to 15 MB."})
     return await run_in_threadpool(
         lambda: _guard(lambda: imports.import_excel(

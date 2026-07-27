@@ -55,7 +55,15 @@ def test_full_top_down_lifecycle_is_coherent(client):
     # AI-generate each architecture level (mock) then apply, and confirm readiness climbs.
     for level, eid in (("l2", l2), ("l3", l3), ("l4", l4)):
         before = client.get(f"/projects/{pid}/{level}/{eid}/arch/readiness", headers=client.h).json()["score"]
-        draft = client.post(f"/projects/{pid}/{level}/{eid}/ai/{level}", json={"brief": "go"}, headers=client.h).json()
+        request = {"brief": "go"}
+        if level == "l4":
+            request["code_diagram"] = (
+                "classDiagram\n"
+                "  class PayController\n"
+                "  class PaymentService\n"
+                "  PayController --> PaymentService"
+            )
+        draft = client.post(f"/projects/{pid}/{level}/{eid}/ai/{level}", json=request, headers=client.h).json()
         client.post(f"/projects/{pid}/{level}/{eid}/ai/{level}/apply", json={"draft": draft}, headers=client.h)
         after = client.get(f"/projects/{pid}/{level}/{eid}/arch/readiness", headers=client.h).json()["score"]
         assert after > before, f"{level} readiness should rise after applying the AI baseline"

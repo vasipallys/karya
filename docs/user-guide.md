@@ -365,6 +365,26 @@ completing them baselines the element. A rejection un-baselines it back to
 > down (e.g. an L2 at ≥80% is *Ready for L3 component design*). Use **AI generate**
 > to bootstrap, then review and refine — don't accept blindly.
 
+**Diagram-driven L4 generation.** Create or refine the L4 implementation
+class/sequence diagram, then choose **AI generate from diagram**. The diagram is
+the authoritative input: AI derives code units and likely paths, test cases,
+CI/review/IaC/release deliverables and Definition-of-Done checks without
+redesigning it. The review also shows hierarchy-validated L2→L3→L4 traceability
+and a complete implementation-summary preview. Applying the plan persists the
+artifacts and opens the final living summary.
+
+**Context-grounded AI drafts (L1–L4).** Every level now uses the evidence already
+available above it. L1 uses the platform description, leads and C4 canvas; L2
+uses its parent L1 vision, OKRs, capabilities, stakeholders and risks; L3 uses
+the parent L2 containers, APIs, NFRs, integrations and diagram; L4 uses the
+parent L3 components, interfaces, dependencies, behavior models and its
+authoritative implementation diagram.
+
+The review dialog shows exactly which upstream items grounded the proposal. You
+can edit any generated field, remove individual items, exclude whole sections,
+then choose **Save selected as draft** or **Save & submit for review**. Generating
+or dismissing a proposal never persists it.
+
 ---
 
 ## 13. Workflow guide

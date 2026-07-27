@@ -21,6 +21,7 @@ from backend.llm.local import LocalModelInferenceError, LocalModelLoadingError
 from backend.planning import store as planning_store
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["chat"])
+_ATTACHMENT_LIMIT = 10 * 1024 * 1024
 
 
 def _run(operation: Callable[[], Any]) -> Any:
@@ -108,10 +109,10 @@ async def remove_conversation(project_id: str, conversation_id: str, request: Re
 async def upload_attachment(project_id: str, conversation_id: str, request: Request,
                             file: UploadFile = File(...)) -> dict[str, Any]:
     _run(lambda: chat_store.get_conversation(project_id, conversation_id, _user_id(request)))
-    content = await file.read()
+    content = await file.read(_ATTACHMENT_LIMIT + 1)
     if not content:
         raise HTTPException(status_code=400, detail={"code": "empty_file", "message": "The attachment is empty."})
-    if len(content) > 10 * 1024 * 1024:
+    if len(content) > _ATTACHMENT_LIMIT:
         raise HTTPException(status_code=413, detail={"code": "file_too_large", "message": "Attachments are limited to 10 MB."})
     extracted = _run(lambda: _extract_file(file.filename or "attachment", content))
     return chat_store.add_attachment(conversation_id, file.filename or "attachment",

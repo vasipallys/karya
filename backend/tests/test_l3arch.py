@@ -163,11 +163,14 @@ async def test_ai_generate_and_apply_l3():
     project_id, _, l3 = _scope()
     draft = await agents.generate_l3_baseline(project_id, l3, "A payments component.")
     assert draft.component_diagram and draft.components and draft.interfaces and draft.concerns
-    result = agents.apply_l3_baseline(project_id, l3, draft.model_dump())
+    assert draft.context and draft.context.source_level == "L2"
+    result = agents.apply_l3_baseline(project_id, l3, draft.model_dump(), submit_for_review=True)
     assert result["components"] == len(draft.components)
     assert store.get_l3(project_id, l3)["component_diagram"] == draft.component_diagram
     assert len(store.list_interfaces(l3)) == len(draft.interfaces)
     assert len(store.list_behavior_views(l3)) == len(draft.behavior_views)
+    assert all(component["status"] == "planned" for component in store.list_components(l3))
+    assert store.approval_state(l3)["submitted"] is True
 
 
 def test_ai_apply_bad_element_returns_4xx_not_500():

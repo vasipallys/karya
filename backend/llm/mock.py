@@ -601,34 +601,48 @@ def _build_agentic(schema: type[BaseModel], messages: list[Any]) -> BaseModel:
     if schema is L4Draft:
         match = re.search(r"L4 TASK:\s*(.+)", text)
         name = match.group(1).splitlines()[0].strip() if match else "the task"
-        diagram = "\n".join([
-            "classDiagram",
-            "  class Controller {",
-            "    +create(req) Response",
-            "  }",
-            "  class Service {",
-            "    +handle(cmd) Result",
-            "  }",
-            "  Controller --> Service",
-        ])
+        diagram_match = re.search(
+            r"AUTHORITATIVE IMPLEMENTATION DIAGRAM:\s*(.+?)\n\nBRIEF:",
+            text,
+            re.DOTALL,
+        )
+        diagram = diagram_match.group(1).strip() if diagram_match else "classDiagram\n  class Implementation"
+        symbols = list(dict.fromkeys(re.findall(
+            r"^\s*(?:class|participant|actor)\s+([A-Za-z_][A-Za-z0-9_]*)",
+            diagram,
+            re.MULTILINE,
+        )))[:10]
+        if not symbols:
+            symbols = ["Implementation"]
+        code_units = [
+            DraftCodeUnit(
+                name=symbol,
+                unit_type="class",
+                responsibility=f"Implement the {symbol} behavior and interactions defined by the implementation diagram.",
+                tech="TBD",
+                path=f"src/{re.sub(r'(?<!^)(?=[A-Z])', '-', symbol).lower()}.py",
+                complexity="medium",
+            )
+            for symbol in symbols
+        ]
+        primary = symbols[0]
+        collaborator = symbols[1] if len(symbols) > 1 else "its dependency"
         return L4Draft(
-            summary=f"Mock mode: an L4 implementation plan for '{name}' — a controller method, a service method, and their tests.",
+            summary=f"Mock mode: a diagram-derived L4 implementation plan for '{name}' covering {', '.join(symbols)}.",
             code_diagram=diagram,
-            code_units=[
-                DraftCodeUnit(name="Controller.create", unit_type="function", responsibility="Parse request, call service, map response.", tech="Java", complexity="low"),
-                DraftCodeUnit(name="Service.handle", unit_type="function", responsibility="Apply business rules and persist.", tech="Java", complexity="medium"),
-                DraftCodeUnit(name="RequestDto", unit_type="class", responsibility="Validated inbound payload.", tech="Java", complexity="low"),
-            ],
+            code_units=code_units,
             test_cases=[
-                DraftTestCase(name="rejects invalid payload", test_type="unit", scenario="Given a request missing required fields", expected="Returns 400 with field errors."),
-                DraftTestCase(name="persists on happy path", test_type="integration", scenario="Given a valid request", expected="Record is stored and 201 returned."),
+                DraftTestCase(name=f"{primary} happy path", test_type="unit", scenario=f"Given valid input when {primary} executes the diagrammed behavior", expected="The expected result is returned and all diagrammed calls occur."),
+                DraftTestCase(name=f"{primary} dependency failure", test_type="integration", scenario=f"Given {collaborator} fails during the diagrammed interaction", expected="The failure is handled, observable, and does not leave partial state."),
+                DraftTestCase(name="diagram contract flow", test_type="contract", scenario="Given the implementation boundary contracts shown in the diagram", expected="Requests and responses conform to the agreed contract."),
             ],
             checklist=[
-                DraftChecklistItem(item="Implement controller + service", category="code"),
+                DraftChecklistItem(item="Implement every code unit and interaction shown in the implementation diagram", category="code"),
                 DraftChecklistItem(item="Unit + integration tests green", category="tests"),
-                DraftChecklistItem(item="Update API docs", category="docs"),
-                DraftChecklistItem(item="Security review of inputs", category="security"),
-                DraftChecklistItem(item="Peer code review", category="review"),
+                DraftChecklistItem(item="Update implementation and contract documentation", category="docs"),
+                DraftChecklistItem(item="Complete security review of inputs, boundaries, secrets, and data handling", category="security"),
+                DraftChecklistItem(item="Peer code review approved with required checks", category="review"),
+                DraftChecklistItem(item="Deployment and rollback verified in a production-like environment", category="deploy"),
             ],
             delivery_assets=[
                 DraftDeliveryAsset(name="Build and test pipeline", asset_type="ci_pipeline", description="Runs lint, unit, integration, and security checks.", owner="Engineering"),

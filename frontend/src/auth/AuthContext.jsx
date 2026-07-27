@@ -27,6 +27,12 @@ export function AuthProvider({ children }) {
     else localStorage.removeItem(STORAGE_KEY)
   }, [user])
 
+  useEffect(() => {
+    const onUnauthorized = () => setUser(null)
+    window.addEventListener('karya:unauthorized', onUnauthorized)
+    return () => window.removeEventListener('karya:unauthorized', onUnauthorized)
+  }, [])
+
   const signIn = useCallback((nextUser) => setUser(nextUser), [])
   const signOut = useCallback(() => setUser(null), [])
 

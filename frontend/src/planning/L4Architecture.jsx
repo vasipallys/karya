@@ -11,6 +11,7 @@ import MermaidView from '../components/MermaidView'
 import MermaidWorkbench from '../components/MermaidWorkbench'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
+import AiLevelDraftReview, { AI_DRAFT_SECTIONS } from './AiLevelDraftReview'
 
 const DiagramStudio = lazy(() => import('./DiagramStudio'))
 
@@ -18,7 +19,7 @@ const TABS = [
   { id: 'overview', label: 'Implementation diagram', icon: Network },
   { id: 'code_units', label: 'Code units', icon: Code2 },
   { id: 'test_cases', label: 'Test cases', icon: FlaskConical },
-  { id: 'delivery_assets', label: 'Delivery assets', icon: PackageCheck },
+  { id: 'delivery_assets', label: 'Deliverables', icon: PackageCheck },
   { id: 'checklist', label: 'Definition of Done', icon: ListChecks },
   { id: 'traceability', label: 'Traceability', icon: GitBranch },
   { id: 'summary', label: 'Implementation summary', icon: FileText },
@@ -98,8 +99,8 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
   }, [projectId, reloadToken]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(() => {
-    if (!l4Id) return
-    api.l4Workspace(projectId, l4Id).then((data) => {
+    if (!l4Id) return Promise.resolve()
+    return api.l4Workspace(projectId, l4Id).then((data) => {
       setWs(data); setDiagram(data.arch.code_diagram || ''); setSummary(data.arch.summary || '')
     }).catch(fail)
   }, [projectId, l4Id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -131,14 +132,31 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
   }
 
   const runAi = async () => {
+    if (!diagram.trim()) {
+      toast.info('Create or generate an implementation diagram first. L4 artifacts are derived from that diagram.')
+      setTab('overview')
+      return
+    }
     setAi({ loading: true })
-    try { setAi({ draft: await api.aiL4Baseline(projectId, l4Id, '') }) } catch (err) { fail(err); setAi(null) }
+    try {
+      setAi({ draft: await api.aiL4Baseline(projectId, l4Id, '', diagram.trim()), sections: AI_DRAFT_SECTIONS.L4.map((section) => section.key) })
+    } catch (err) { fail(err); setAi(null) }
   }
-  const applyAi = async () => {
+  const applyAi = async (submitForReview = false) => {
     setBusy(true)
     try {
-      const result = await api.applyL4Baseline(projectId, l4Id, ai.draft)
-      setAi(null); toast.success(`Added ${Object.values(result).reduce((a, b) => a + b, 0)} items`); await load()
+      const result = await api.applyL4Baseline(projectId, l4Id, ai.draft, ai.sections, submitForReview)
+      await load()
+      const [summaryResult, traceResult] = await Promise.all([
+        api.l4ImplementationSummary(projectId, l4Id),
+        api.l4Traceability(projectId, l4Id),
+      ])
+      setExec({ markdown: summaryResult.markdown })
+      setTrace(traceResult)
+      setTab('summary')
+      setAi(null)
+      const count = Object.entries(result).filter(([key]) => key !== 'submitted_for_review').reduce((sum, [, value]) => sum + value, 0)
+      toast.success(submitForReview ? `Saved ${count} L4 artifacts for review` : `Saved ${count} L4 draft artifacts`)
     } catch (err) { fail(err) } finally { setBusy(false) }
   }
 
@@ -177,7 +195,9 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
             const anchor = document.createElement('a'); anchor.href = url; anchor.download = handoffFilename(ws.element.name); anchor.click()
             URL.revokeObjectURL(url)
           }}><Download size={14} /> .md</button>
-        <button className="m3-btn tonal small" onClick={runAi} disabled={ai?.loading}><Sparkles size={15} /> {ai?.loading ? 'Drafting…' : 'AI generate L4'}</button>
+        <button className="m3-btn tonal small" onClick={runAi} disabled={ai?.loading || !diagram.trim()}
+          title={diagram.trim() ? 'Generate L4 artifacts from the implementation diagram' : 'Create an implementation diagram first'}>
+          <Sparkles size={15} /> {ai?.loading ? 'Analyzing diagram…' : 'AI generate from diagram'}</button>
         <button className="m3-icon-btn" onClick={load} aria-label="Refresh"><Network size={17} /></button>
       </div>
     </header>
@@ -216,7 +236,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
 
       {tab === 'code_units' && <ArtifactTab entity="code_unit" title="Code Units" columns={['name', 'unit_type', 'tech', 'path', 'complexity', 'status']} rows={ws.code_units} onAdd={() => openDialog('code_unit')} onEdit={openDialog} onDelete={removeEntity} />}
       {tab === 'test_cases' && <ArtifactTab entity="test_case" title="Test Cases" columns={['name', 'test_type', 'scenario', 'status']} rows={ws.test_cases} onAdd={() => openDialog('test_case')} onEdit={openDialog} onDelete={removeEntity} />}
-      {tab === 'delivery_assets' && <ArtifactTab entity="delivery_asset" title="CI, Code Review, Infrastructure as Code & Release Package" columns={['name', 'asset_type', 'location', 'owner', 'status']} rows={ws.delivery_assets} onAdd={() => openDialog('delivery_asset')} onEdit={openDialog} onDelete={removeEntity} />}
+      {tab === 'delivery_assets' && <ArtifactTab entity="delivery_asset" title="Deliverables: CI, Code Review, Infrastructure as Code & Release Package" columns={['name', 'asset_type', 'location', 'owner', 'status']} rows={ws.delivery_assets} onAdd={() => openDialog('delivery_asset')} onEdit={openDialog} onDelete={removeEntity} />}
 
       {tab === 'checklist' && <div className="l1arch-panel">
         <div className="l1arch-section-head"><h3>Definition of Done <small>{ws.checklist.filter((c) => c.done).length}/{ws.checklist.length} done</small></h3>
@@ -238,7 +258,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
         {trace?.loading && <div className="l1-loading">Building trace…</div>}
         {trace?.mermaid && <>
           <div className="l1arch-diagram-box"><MermaidView source={trace.mermaid} /></div>
-          <p className="admin-muted">{trace.l2 ? `L2 “${trace.l2.name}” → ` : ''}{trace.l3 ? `L3 “${trace.l3.name}” → ` : ''}L4 “{trace.l4.name}”.</p>
+          <p className="admin-muted">{trace.l2 ? `L2 “${trace.l2.name}” → ` : ''}{trace.l3 ? `L3 “${trace.l3.name}” → ` : ''}{trace.l4 ? `L4 “${trace.l4.name}”.` : ''}</p>
         </>}
       </div>}
 
@@ -263,12 +283,25 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
       </div>
     </PlanningDialog>}
 
-    {ai?.draft && <PlanningDialog wide title="AI L4 implementation draft" onClose={() => setAi(null)}
-      actions={<><button className="m3-btn text" onClick={() => setAi(null)}>Cancel</button><button className="m3-btn filled" disabled={busy} onClick={applyAi}>Apply all</button></>}>
-      <div className="m3-banner info">{ai.draft.summary}</div>
-      <div className="ai-baseline-preview">
-        <p><strong>{ai.draft.code_units.length}</strong> code units · <strong>{ai.draft.test_cases.length}</strong> tests · <strong>{ai.draft.delivery_assets?.length || 0}</strong> delivery assets · <strong>{ai.draft.checklist.length}</strong> DoD items</p>
-        {ai.draft.code_diagram && <MermaidView source={ai.draft.code_diagram} fit="width" />}
+    {ai?.draft && <PlanningDialog wide title="AI L4 context-grounded draft" onClose={() => setAi(null)}
+      actions={<><button className="m3-btn text" onClick={() => setAi(null)}>Dismiss</button>
+        <button className="m3-btn tonal" disabled={busy || !ai.sections.length} onClick={() => applyAi(false)}>Save selected as draft</button>
+        <button className="m3-btn filled" disabled={busy || !ai.sections.length} onClick={() => applyAi(true)}>Save for review</button></>}>
+      <div className="ai-l4-review">
+        <AiLevelDraftReview level="L4" draft={ai.draft} selected={ai.sections}
+          onDraftChange={(draft) => setAi((current) => ({ ...current, draft: { ...draft, implementation_summary: '' } }))}
+          onSelectedChange={(sections) => setAi((current) => ({ ...current, sections }))} />
+        {ai.draft.traceability_mermaid && <section>
+          <h3>Validated traceability</h3>
+          <MermaidView source={ai.draft.traceability_mermaid} fit="width" />
+        </section>}
+        {ai.draft.implementation_summary && <section>
+          <h3>Implementation summary preview</h3>
+          <div className="l1arch-exec"><MarkdownViewer content={ai.draft.implementation_summary} /></div>
+        </section>}
+        {!ai.draft.implementation_summary && <div className="m3-banner info">
+          The proposal changed. Karya will rebuild the final implementation summary from the saved artifacts.
+        </div>}
       </div>
     </PlanningDialog>}
 

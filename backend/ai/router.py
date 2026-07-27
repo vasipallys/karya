@@ -83,6 +83,7 @@ class L1BaselineRequest(BaseModel):
 class ApplyL1Baseline(BaseModel):
     draft: L1BaselineDraft
     sections: list[str] | None = None
+    submit_for_review: bool = False
 
 
 class L2BaselineRequest(BaseModel):
@@ -92,6 +93,7 @@ class L2BaselineRequest(BaseModel):
 class ApplyL2Baseline(BaseModel):
     draft: L2Draft
     sections: list[str] | None = None
+    submit_for_review: bool = False
 
 
 class L3BaselineRequest(BaseModel):
@@ -101,15 +103,18 @@ class L3BaselineRequest(BaseModel):
 class ApplyL3Baseline(BaseModel):
     draft: L3Draft
     sections: list[str] | None = None
+    submit_for_review: bool = False
 
 
 class L4BaselineRequest(BaseModel):
     brief: str = Field(default="", max_length=8000)
+    code_diagram: str = Field(default="", max_length=20000)
 
 
 class ApplyL4Baseline(BaseModel):
     draft: L4Draft
     sections: list[str] | None = None
+    submit_for_review: bool = False
 
 
 class OrchestrateRequest(BaseModel):
@@ -187,7 +192,9 @@ async def generate_l1_baseline(project_id: str, l1_element_id: str, payload: L1B
 
 @router.post("/projects/{project_id}/l1/{l1_element_id}/ai/baseline/apply")
 async def apply_l1_baseline(project_id: str, l1_element_id: str, payload: ApplyL1Baseline) -> dict[str, Any]:
-    return _guard(lambda: agents.apply_l1_baseline(project_id, l1_element_id, payload.draft.model_dump(), payload.sections))
+    return _guard(lambda: agents.apply_l1_baseline(
+        project_id, l1_element_id, payload.draft.model_dump(), payload.sections, payload.submit_for_review,
+    ))
 
 
 # ---- L2 container-architecture generator --------------------------------
@@ -202,7 +209,9 @@ async def generate_l2_baseline(project_id: str, l2_element_id: str, payload: L2B
 
 @router.post("/projects/{project_id}/l2/{l2_element_id}/ai/l2/apply")
 async def apply_l2_baseline(project_id: str, l2_element_id: str, payload: ApplyL2Baseline) -> dict[str, Any]:
-    return _guard(lambda: agents.apply_l2_baseline(project_id, l2_element_id, payload.draft.model_dump(), payload.sections))
+    return _guard(lambda: agents.apply_l2_baseline(
+        project_id, l2_element_id, payload.draft.model_dump(), payload.sections, payload.submit_for_review,
+    ))
 
 
 # ---- L3 component-architecture generator --------------------------------
@@ -217,7 +226,9 @@ async def generate_l3_baseline(project_id: str, l3_element_id: str, payload: L3B
 
 @router.post("/projects/{project_id}/l3/{l3_element_id}/ai/l3/apply")
 async def apply_l3_baseline(project_id: str, l3_element_id: str, payload: ApplyL3Baseline) -> dict[str, Any]:
-    return _guard(lambda: agents.apply_l3_baseline(project_id, l3_element_id, payload.draft.model_dump(), payload.sections))
+    return _guard(lambda: agents.apply_l3_baseline(
+        project_id, l3_element_id, payload.draft.model_dump(), payload.sections, payload.submit_for_review,
+    ))
 
 
 # ---- L4 implementation-detail generator ---------------------------------
@@ -226,13 +237,21 @@ async def apply_l3_baseline(project_id: str, l3_element_id: str, payload: ApplyL
 async def generate_l4_baseline(project_id: str, l4_element_id: str, payload: L4BaselineRequest, request: Request) -> dict[str, Any]:
     require_llm_config(request)
     _guard(lambda: c4_store.get_element(project_id, l4_element_id))
-    draft = await agents.generate_l4_baseline(project_id, l4_element_id, payload.brief)
+    workspace = _guard(lambda: l4_store.get_workspace(project_id, l4_element_id))
+    if not (payload.code_diagram or workspace["arch"].get("code_diagram") or "").strip():
+        raise HTTPException(status_code=400, detail={
+            "code": "implementation_diagram_required",
+            "message": "Create or generate an implementation diagram before generating L4 artifacts.",
+        })
+    draft = await agents.generate_l4_baseline(project_id, l4_element_id, payload.brief, payload.code_diagram)
     return draft.model_dump()
 
 
 @router.post("/projects/{project_id}/l4/{l4_element_id}/ai/l4/apply")
 async def apply_l4_baseline(project_id: str, l4_element_id: str, payload: ApplyL4Baseline) -> dict[str, Any]:
-    return _guard(lambda: agents.apply_l4_baseline(project_id, l4_element_id, payload.draft.model_dump(), payload.sections))
+    return _guard(lambda: agents.apply_l4_baseline(
+        project_id, l4_element_id, payload.draft.model_dump(), payload.sections, payload.submit_for_review,
+    ))
 
 
 # ---- orchestrator -------------------------------------------------------

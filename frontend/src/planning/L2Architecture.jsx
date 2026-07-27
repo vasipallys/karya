@@ -11,6 +11,7 @@ import MermaidView from '../components/MermaidView'
 import MermaidWorkbench from '../components/MermaidWorkbench'
 import { useToast } from '../ui/Toast'
 import PlanningDialog from './PlanningDialog'
+import AiLevelDraftReview, { AI_DRAFT_SECTIONS } from './AiLevelDraftReview'
 
 const DiagramStudio = lazy(() => import('./DiagramStudio'))
 
@@ -158,13 +159,16 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
 
   const runAi = async () => {
     setAi({ loading: true })
-    try { setAi({ draft: await api.aiL2Baseline(projectId, l2Id, '') }) } catch (err) { fail(err); setAi(null) }
+    try {
+      setAi({ draft: await api.aiL2Baseline(projectId, l2Id, ''), sections: AI_DRAFT_SECTIONS.L2.map((section) => section.key) })
+    } catch (err) { fail(err); setAi(null) }
   }
-  const applyAi = async () => {
+  const applyAi = async (submitForReview = false) => {
     setBusy(true)
     try {
-      const result = await api.applyL2Baseline(projectId, l2Id, ai.draft)
-      setAi(null); toast.success(`Added ${Object.values(result).reduce((a, b) => a + b, 0)} items`); await load()
+      const result = await api.applyL2Baseline(projectId, l2Id, ai.draft, ai.sections, submitForReview)
+      const count = Object.entries(result).filter(([key]) => key !== 'submitted_for_review').reduce((sum, [, value]) => sum + value, 0)
+      setAi(null); toast.success(submitForReview ? `Saved ${count} items and submitted L2 for review` : `Saved ${count} draft items`); await load()
     } catch (err) { fail(err) } finally { setBusy(false) }
   }
 
@@ -312,13 +316,13 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
       </div>
     </PlanningDialog>}
 
-    {ai?.draft && <PlanningDialog wide title="AI L2 architecture draft" onClose={() => setAi(null)}
-      actions={<><button className="m3-btn text" onClick={() => setAi(null)}>Cancel</button><button className="m3-btn filled" disabled={busy} onClick={applyAi}>Apply all</button></>}>
-      <div className="m3-banner info">{ai.draft.summary}</div>
-      <div className="ai-baseline-preview">
-        <p><strong>{ai.draft.containers.length}</strong> containers · <strong>{ai.draft.apis.length}</strong> APIs · <strong>{ai.draft.nfrs.length}</strong> NFRs · <strong>{ai.draft.integrations.length}</strong> integrations</p>
-        {ai.draft.container_diagram && <MermaidView source={ai.draft.container_diagram} fit="width" />}
-      </div>
+    {ai?.draft && <PlanningDialog wide title="AI L2 context-grounded draft" onClose={() => setAi(null)}
+      actions={<><button className="m3-btn text" onClick={() => setAi(null)}>Dismiss</button>
+        <button className="m3-btn tonal" disabled={busy || !ai.sections.length} onClick={() => applyAi(false)}>Save selected as draft</button>
+        <button className="m3-btn filled" disabled={busy || !ai.sections.length} onClick={() => applyAi(true)}>Save &amp; submit for review</button></>}>
+      <AiLevelDraftReview level="L2" draft={ai.draft} selected={ai.sections}
+        onDraftChange={(draft) => setAi((current) => ({ ...current, draft }))}
+        onSelectedChange={(sections) => setAi((current) => ({ ...current, sections }))} />
     </PlanningDialog>}
 
     {importDlg && <PlanningDialog wide title="Import into L2" onClose={() => setImportDlg(null)}

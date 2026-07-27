@@ -4,6 +4,7 @@ const fs = require('fs')
 const http = require('http')
 const net = require('net')
 const path = require('path')
+const { pathToFileURL } = require('url')
 
 const isDev = !app.isPackaged
 const DEFAULT_DESKTOP_PORT = 8765
@@ -137,15 +138,33 @@ function randomAvailablePort() {
 
 function requestHealth(baseUrl, timeoutMs = 1200) {
   return new Promise((resolve) => {
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
     const request = http.get(`${baseUrl}/health`, { timeout: timeoutMs }, (response) => {
-      response.resume()
-      resolve(response.statusCode >= 200 && response.statusCode < 500)
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk) => {
+        if (body.length < 64 * 1024) body += chunk
+      })
+      response.on('end', () => {
+        if (response.statusCode !== 200) return finish(false)
+        try {
+          const payload = JSON.parse(body)
+          finish(payload?.status === 'ok' || payload?.status === 'degraded')
+        } catch {
+          finish(false)
+        }
+      })
     })
     request.on('timeout', () => {
       request.destroy()
-      resolve(false)
+      finish(false)
     })
-    request.on('error', () => resolve(false))
+    request.on('error', () => finish(false))
   })
 }
 
@@ -177,6 +196,7 @@ function attachPackagedLogs(child) {
 async function startBackend() {
   if (process.env.KARYA_EXTERNAL_API_URL) {
     apiBaseUrl = process.env.KARYA_EXTERNAL_API_URL.replace(/\/$/, '')
+    await waitForBackend(apiBaseUrl, 10000)
     return
   }
 
@@ -223,15 +243,25 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       additionalArguments: [`--karya-api-base=${apiBaseUrl}`],
     },
   })
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (/^(https?:|mailto:)/i.test(url)) shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  const trustedAppUrl = process.env.ELECTRON_DEV_SERVER_URL
+    ? new URL(process.env.ELECTRON_DEV_SERVER_URL).origin
+    : pathToFileURL(path.join(__dirname, '..', '..', 'dist', 'index.html')).href
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const trusted = process.env.ELECTRON_DEV_SERVER_URL
+      ? url.startsWith(`${trustedAppUrl}/`) || url === trustedAppUrl
+      : url === trustedAppUrl || url.startsWith(`${trustedAppUrl}#`)
+    if (!trusted) event.preventDefault()
   })
 
   if (process.env.ELECTRON_DEV_SERVER_URL) {
