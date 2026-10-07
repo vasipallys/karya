@@ -28,7 +28,7 @@ function C4Node({ data }) {
 
 const nodeTypes = { c4: C4Node }
 
-export default function C4Canvas({ projectId, config, requestedElement, onOpenWorkspace, reloadToken }) {
+export default function C4Canvas({ projectId, config, requestedElement, onOpenWorkspace, onFocus, reloadToken }) {
   const [graph, setGraph] = useState({ elements: [], relations: [] })
   const [drill, setDrill] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -96,6 +96,15 @@ export default function C4Canvas({ projectId, config, requestedElement, onOpenWo
   }
 
   const parentId = drill.length ? drill[drill.length - 1].id : null
+
+  // Tell the workspace shell what the user is looking at (selection, else the
+  // drilled-into parent) so the other level tabs open on the same branch.
+  const focusId = selectedId || parentId
+  useEffect(() => {
+    if (!focusId) return
+    const element = graph.elements.find((item) => item.id === focusId)
+    if (element) onFocus?.(element)
+  }, [focusId, graph.elements, onFocus])
   const visible = useMemo(() => graph.elements.filter((element) => element.parent_id === parentId), [graph, parentId])
   const childCounts = useMemo(() => {
     const counts = {}

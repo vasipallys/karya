@@ -1,10 +1,11 @@
 import { BookOpen, BrainCircuit, ChevronDown, LogOut, Server, ShieldCheck, Sparkles } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
 import { useAuth } from './auth/AuthContext'
 import { ROLE_LABELS } from './auth/permissions'
 import AskAiDialog from './components/AskAiDialog'
 import { resolveAiDestination } from './components/askAiRouting'
+import { parseHash, routeToHash } from './routing'
 import { useToast } from './ui/Toast'
 import AdminConsole from './screens/AdminConsole'
 import HomeInbox from './screens/HomeInbox'
@@ -49,16 +50,54 @@ function UserMenu() {
 export default function App() {
   const { user, can } = useAuth()
   const toast = useToast()
-  const [route, setRoute] = useState({ name: 'home' })
+  const [initial] = useState(() => parseHash(window.location.hash))
+  const [route, setRoute] = useState(initial.route)
   const [config, setConfig] = useState(null)
   const [health, setHealth] = useState(null)
   const [error, setError] = useState(null)
   const [askAi, setAskAi] = useState(false)
-  const [workspaceTab, setWorkspaceTab] = useState(null)
+  const [workspaceTab, setWorkspaceTab] = useState(initial.tab)
+  // Where the open workspace is (tab + focused element), reported by it.
+  const [workspaceLocation, setWorkspaceLocation] = useState(null)
+  const onWorkspaceLocation = useCallback((location) => setWorkspaceLocation(location), [])
 
   // Land every freshly signed-in identity on Home (avoids showing a prior
-  // session's route, e.g. an admin page, to a user who can't access it).
-  useEffect(() => { setRoute({ name: 'home' }) }, [user?.staff_id, user?.role])
+  // session's route, e.g. an admin page, to a user who can't access it). The
+  // identity restored on page load keeps its URL so refresh stays in place.
+  const identity = `${user?.staff_id || ''}:${user?.role || ''}`
+  const identityRef = useRef(identity)
+  useEffect(() => {
+    if (identityRef.current === identity) return
+    identityRef.current = identity
+    setRoute({ name: 'home' })
+  }, [identity])
+
+  // Mirror the route into the URL hash: a new page/tab pushes a history entry
+  // (so Back works), a new element on the same tab just replaces it.
+  useEffect(() => {
+    const hash = routeToHash(route, route.name === 'project' ? workspaceLocation : null)
+    if (!hash || hash === window.location.hash) return
+    const current = parseHash(window.location.hash)
+    const next = parseHash(hash)
+    const samePage = JSON.stringify(current.route) === JSON.stringify(next.route) && current.tab?.id === next.tab?.id
+    try { window.history[samePage ? 'replaceState' : 'pushState'](null, '', hash) } catch { window.location.hash = hash }
+  }, [route, workspaceLocation])
+
+  // Browser back/forward (or a pasted link) restores the route and workspace tab.
+  useEffect(() => {
+    const onPop = () => {
+      const parsed = parseHash(window.location.hash)
+      setRoute(parsed.route)
+      if (parsed.tab) {
+        setWorkspaceTab({ ...parsed.tab })
+        // Already where the URL says, so the sync effect above doesn't push a
+        // stale location before the workspace catches up.
+        setWorkspaceLocation({ tab: parsed.tab.id, elementId: parsed.tab.elementId })
+      } else setWorkspaceLocation(null)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -89,7 +128,7 @@ export default function App() {
       setRoute({ name: 'inbox', view: target.view || 'actions' })
     } else if (target.kind === 'project') {
       if (!showWorkspace) { toast.info('You do not have access to project workspaces.'); return }
-      setWorkspaceTab(target.tab ? { id: target.tab } : null)
+      setWorkspaceTab(target.tab ? { id: target.tab, elementId: target.elementId || null } : null)
       setRoute({ name: 'project', id: target.id })
     } else if (target.kind === 'admin') {
       if (showAdmin) setRoute({ name: 'admin', section: target.section, sectionTab: target.tab })
@@ -132,7 +171,8 @@ export default function App() {
       ? <>
         {configurationError && <div className="m3-content" style={{ padding: '16px 28px 0' }}><div className="m3-banner error">{configurationError}</div></div>}
         {showWorkspace
-          ? <ProjectWorkspace key={route.id} projectId={route.id} config={config} notice={route.notice} requestedTab={workspaceTab} />
+          ? <ProjectWorkspace key={route.id} projectId={route.id} config={config} notice={route.notice} requestedTab={workspaceTab}
+            onLocationChange={onWorkspaceLocation} />
           : <div className="m3-content"><div className="m3-banner error">You don't have access to the project workspace.</div></div>}
       </>
       : <div className="m3-content" style={{ flex: 1 }}>

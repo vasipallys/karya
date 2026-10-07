@@ -22,12 +22,12 @@ const ACTION_ICON = {
   work: ListChecks, okr: Target, risk: ShieldAlert, comment: MessageSquare, team: Users,
 }
 
-// Where a work item / action lands: work lives in a project's L1 plan, the
-// bench pool lives in the Resources directory.
-const taskTarget = (task) => (task.project_id ? { kind: 'project', id: task.project_id, tab: 'planning' } : null)
+// Where a work item / action lands: work lives in its own L1 initiative's
+// plan, the bench pool lives in the Resources directory.
+const taskTarget = (task) => (task.project_id ? { kind: 'project', id: task.project_id, tab: 'planning', elementId: task.l1_id || null } : null)
 const actionTarget = (action) => {
   if (action.category === 'team') return { kind: 'admin', section: 'resources' }
-  if (action.project_id) return { kind: 'project', id: action.project_id, tab: 'planning' }
+  if (action.project_id) return { kind: 'project', id: action.project_id, tab: 'planning', elementId: action.l1_id || null }
   return null
 }
 

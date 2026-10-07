@@ -80,3 +80,22 @@ def test_estimation_progress_and_endpoint():
         assert resp.status_code == 200
         assert resp.json()["project"]["name"] == "Est"
         assert client.get("/projects/missing/workflow", headers={"X-User-Role": "viewer"}).status_code == 404
+
+
+def test_actions_target_the_element_they_are_about():
+    project = create_project(ProjectCreate(name="Targets"))
+    pid = project["id"]
+    l1 = c4_store.create_element(pid, C4ElementCreate(level="L1", name="I"))
+    l2 = c4_store.create_element(pid, C4ElementCreate(level="L2", name="E", parent_id=l1["id"]))
+    guide = service.guide(pid)
+    levels = {v["level"]: v for v in guide["levels"]}
+    # L2 not ready yet → "raise readiness" opens the (only, so weakest) L2.
+    assert levels["L2"]["actions"][0]["element_id"] == l2["id"]
+    assert levels["L2"]["weakest_id"] == l2["id"]
+    # No L3 yet → "add L3 on the canvas" drills into the L2 parent.
+    assert levels["L3"]["actions"][0]["tab"] == "canvas"
+    assert levels["L3"]["actions"][0]["element_id"] == l2["id"]
+
+    story = c4_store.create_element(pid, C4ElementCreate(level="L3", name="S", parent_id=l2["id"]))
+    estimate = service.guide(pid)["estimation"]["actions"][0]
+    assert estimate["tab"] == "canvas" and estimate["element_id"] == story["id"]

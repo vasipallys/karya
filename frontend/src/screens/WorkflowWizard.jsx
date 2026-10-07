@@ -28,7 +28,7 @@ export default function WorkflowWizard({ projectId, onNavigate, onClose }) {
     ]
   }, [guide])
 
-  const go = (tab) => { onNavigate(tab); onClose() }
+  const go = (action) => { onNavigate(action.tab, action.element_id || null); onClose() }
 
   if (!guide) {
     return <Scrim onClose={onClose}><div className="wf-wizard"><div className="l1-loading">Building your workflow guide…</div></div></Scrim>
@@ -56,7 +56,7 @@ export default function WorkflowWizard({ projectId, onNavigate, onClose }) {
             <span className="wf-stage">Stage: {guide.stage}</span>
           </div>
           {guide.next_action && guide.next_action.tab && (
-            <button className="m3-btn filled small wf-next" onClick={() => go(guide.next_action.tab)}>
+            <button className="m3-btn filled small wf-next" onClick={() => go(guide.next_action)}>
               <Sparkles size={14} /> Next best step: {guide.next_action.text} <ArrowRight size={13} />
             </button>
           )}
@@ -107,7 +107,7 @@ export default function WorkflowWizard({ projectId, onNavigate, onClose }) {
             {current.actions.length === 0
               ? <p className="l1-node-empty">Nothing to do here right now.</p>
               : current.actions.map((a, i) => (
-                <button key={i} className={`wf-action tone-${a.tone}`} onClick={() => go(a.tab)}>
+                <button key={i} className={`wf-action tone-${a.tone}`} onClick={() => go(a)}>
                   <span>{a.text}</span><ArrowRight size={14} />
                 </button>
               ))}

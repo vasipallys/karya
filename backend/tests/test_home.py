@@ -152,3 +152,13 @@ def test_organization_actions_name_the_owner():
     dash = service.organization_dashboard()
     okr = next(a for a in dash["actions"] if a["type"] == "okr_off_track")
     assert "owner Evan Dev" in okr["detail"]
+
+
+def test_tasks_and_actions_carry_their_l1_initiative_for_deep_links():
+    ids = _scenario()
+    dash = service.personal_dashboard(ids["evan"])
+    assert all(t["l1_id"] == ids["l1"] for t in dash["tasks"])
+    payout = next(t for t in dash["tasks"] if t["title"] == "Payout API")
+    assert payout["element_id"] == ids["s2"]
+    linked = [a for a in dash["actions"] if a["category"] in {"work", "okr", "risk", "comment"}]
+    assert linked and all(a["l1_id"] == ids["l1"] for a in linked)

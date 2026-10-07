@@ -2,15 +2,45 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "api",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "cross-env",
+        "LLM_PROVIDER=mock",
+        "venv/Scripts/python.exe",
+        "-m",
+        "uvicorn",
+        "backend.api.main:app",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "web:dev"],
+      "runtimeArgs": [
+        "run",
+        "web:dev"
+      ],
       "port": 5173
     },
     {
       "name": "frontend-preview",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["cross-env", "VITE_API_BASE_URL=http://localhost:8000", "npm", "--workspace", "@karya/web", "run", "dev", "--", "--port", "5174", "--strictPort"],
+      "runtimeArgs": [
+        "cross-env",
+        "VITE_API_BASE_URL=http://localhost:8000",
+        "npm",
+        "--workspace",
+        "@karya/web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
       "port": 5174,
       "autoPort": false
     }

@@ -176,7 +176,7 @@ def _tasks(conn: Any, squad_ids: list[str], today: date) -> list[dict[str, Any]]
     placeholders = ",".join("?" for _ in squad_ids)
     rows = conn.execute(
         f"""SELECT w.id, w.title, w.status, w.start_date, w.end_date, w.allocation_percent,
-                   w.project_id, u.name AS squad_name, p.name AS project_name,
+                   w.project_id, w.l1_element_id, w.linked_element_id, u.name AS squad_name, p.name AS project_name,
                    e.name AS story_name, a.points
             FROM l1_work_items w
             JOIN l1_agile_units u ON u.id = w.squad_id
@@ -199,6 +199,8 @@ def _tasks(conn: Any, squad_ids: list[str], today: date) -> list[dict[str, Any]]
             "squad_name": row["squad_name"],
             "project_id": row["project_id"],
             "project_name": row["project_name"] or "—",
+            "l1_id": row["l1_element_id"],
+            "element_id": row["linked_element_id"],
             "story_name": row["story_name"],
             "points": row["points"],
             "start_date": row["start_date"],
@@ -225,6 +227,7 @@ def _work_item_actions(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         base = {
             "project_id": task["project_id"],
             "project_name": task["project_name"],
+            "l1_id": task.get("l1_id"),
             "category": "work",
         }
         if task["status"] == "at_risk":
@@ -256,7 +259,7 @@ def _okr_actions(conn: Any, owner: str | None) -> list[dict[str, Any]]:
         where = "o.owner = ? AND " + where
         params = (owner,)
     rows = conn.execute(
-        f"""SELECT o.id, o.objective, o.status, o.owner, e.project_id, p.name AS project_name
+        f"""SELECT o.id, o.objective, o.status, o.owner, o.l1_element_id, e.project_id, p.name AS project_name
             FROM l1_okrs o
             JOIN c4_elements e ON e.id = o.l1_element_id
             LEFT JOIN projects p ON p.id = e.project_id
@@ -276,6 +279,7 @@ def _okr_actions(conn: Any, owner: str | None) -> list[dict[str, Any]]:
             "detail": detail,
             "project_id": row["project_id"],
             "project_name": row["project_name"] or "—",
+            "l1_id": row["l1_element_id"],
             "category": "okr",
         })
     return actions
@@ -291,7 +295,7 @@ def _risk_actions(conn: Any, owner: str | None, today: date) -> list[dict[str, A
         where = "r.owner = ? AND " + where
         params = (owner,)
     rows = conn.execute(
-        f"""SELECT r.id, r.title, r.risk_level, r.status, r.target_date, r.owner, e.project_id, p.name AS project_name
+        f"""SELECT r.id, r.title, r.risk_level, r.status, r.target_date, r.owner, r.l1_element_id, e.project_id, p.name AS project_name
             FROM l1_risks r
             JOIN c4_elements e ON e.id = r.l1_element_id
             LEFT JOIN projects p ON p.id = e.project_id
@@ -315,6 +319,7 @@ def _risk_actions(conn: Any, owner: str | None, today: date) -> list[dict[str, A
             "detail": detail,
             "project_id": row["project_id"],
             "project_name": row["project_name"] or "—",
+            "l1_id": row["l1_element_id"],
             "category": "risk",
         })
     return actions
@@ -333,7 +338,7 @@ def _open_comment_actions(conn: Any, name: str) -> list[dict[str, Any]]:
     if not name:
         return []
     rows = conn.execute(
-        """SELECT c.id, c.body, e.project_id, p.name AS project_name, e.name AS initiative
+        """SELECT c.id, c.body, c.l1_element_id, e.project_id, p.name AS project_name, e.name AS initiative
            FROM l1_comments c
            JOIN c4_elements e ON e.id = c.l1_element_id
            LEFT JOIN projects p ON p.id = e.project_id
@@ -349,6 +354,7 @@ def _open_comment_actions(conn: Any, name: str) -> list[dict[str, Any]]:
         "detail": f"Open review comment · {row['initiative']}",
         "project_id": row["project_id"],
         "project_name": row["project_name"] or "—",
+        "l1_id": row["l1_element_id"],
         "category": "comment",
     } for row in rows]
 
@@ -400,7 +406,7 @@ def _all_open_tasks(conn: Any, today: date) -> list[dict[str, Any]]:
     """Every not-done work item across all platforms, most urgent first."""
     rows = conn.execute(
         """SELECT w.id, w.title, w.status, w.start_date, w.end_date, w.project_id,
-                  u.name AS squad_name, p.name AS project_name, e.name AS story_name, a.points
+                  w.l1_element_id, w.linked_element_id, u.name AS squad_name, p.name AS project_name, e.name AS story_name, a.points
            FROM l1_work_items w
            LEFT JOIN l1_agile_units u ON u.id = w.squad_id
            LEFT JOIN projects p ON p.id = w.project_id
@@ -420,6 +426,8 @@ def _all_open_tasks(conn: Any, today: date) -> list[dict[str, Any]]:
             "squad_name": row["squad_name"] or "Unassigned",
             "project_id": row["project_id"],
             "project_name": row["project_name"] or "—",
+            "l1_id": row["l1_element_id"],
+            "element_id": row["linked_element_id"],
             "story_name": row["story_name"],
             "points": row["points"],
             "start_date": row["start_date"],

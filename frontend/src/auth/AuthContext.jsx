@@ -14,6 +14,13 @@ function loadStored() {
   }
 }
 
+function store(user) {
+  try {
+    if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
+    else localStorage.removeItem(STORAGE_KEY)
+  } catch { /* storage unavailable: the session just won't survive a reload */ }
+}
+
 /**
  * Local demo auth: the signed-in "user" is a person from the resource directory
  * plus a role. There are no passwords/tokens — the session is kept client-side
@@ -22,19 +29,19 @@ function loadStored() {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(loadStored)
 
-  useEffect(() => {
-    if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
-    else localStorage.removeItem(STORAGE_KEY)
-  }, [user])
+  useEffect(() => { store(user) }, [user])
 
   useEffect(() => {
-    const onUnauthorized = () => setUser(null)
+    const onUnauthorized = () => { store(null); setUser(null) }
     window.addEventListener('karya:unauthorized', onUnauthorized)
     return () => window.removeEventListener('karya:unauthorized', onUnauthorized)
   }, [])
 
-  const signIn = useCallback((nextUser) => setUser(nextUser), [])
-  const signOut = useCallback(() => setUser(null), [])
+  // Persist before the state update: the API client reads the identity from
+  // storage, and the screens mounted by this sign-in fetch in effects that run
+  // before this provider's own effect — they must already be authenticated.
+  const signIn = useCallback((nextUser) => { store(nextUser); setUser(nextUser) }, [])
+  const signOut = useCallback(() => { store(null); setUser(null) }, [])
 
   const refreshAccess = useCallback(() => {
     if (!user?.staff_id || !api.myAccess) return Promise.resolve()

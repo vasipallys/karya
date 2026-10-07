@@ -7,10 +7,12 @@ const LEVELS = [
   { level: 'L4', focus: 'Change' },
 ]
 
-function relatedTarget(elements, elementId, targetLevel) {
+// The element at targetLevel on the same branch as elementId (its ancestor, or
+// its nearest descendant), or null when the branch has none at that level.
+function lineageTarget(elements, elementId, targetLevel) {
   const byId = new Map(elements.map((element) => [element.id, element]))
   const current = byId.get(elementId)
-  if (!current) return elements.find((element) => element.level === targetLevel) || null
+  if (!current) return null
 
   for (let node = current; node; node = byId.get(node.parent_id)) {
     if (node.level === targetLevel) return node
@@ -29,8 +31,12 @@ function relatedTarget(elements, elementId, targetLevel) {
     if (candidate.level === targetLevel) return candidate
     queue.push(...(childrenByParent.get(candidate.id) || []))
   }
+  return null
+}
 
-  return elements.find((element) => element.level === targetLevel) || null
+function relatedTarget(elements, elementId, targetLevel) {
+  return lineageTarget(elements, elementId, targetLevel)
+    || elements.find((element) => element.level === targetLevel) || null
 }
 
 /**
@@ -66,4 +72,4 @@ export default function LevelNavigator({
   </nav>
 }
 
-export { relatedTarget }
+export { lineageTarget, relatedTarget }

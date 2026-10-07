@@ -97,7 +97,7 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'at_risk', 'blocked', 'restricted'].includes(v) ? 'sub-partiallyallocated' : ['low', 'done', 'met', 'active', 'public'].includes(v) ? 'ok' : ''}`
 
-export default function L2Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement, reloadToken }) {
+export default function L2Architecture({ projectId, requestedId, onSelect, onOpenCanvas, onOpenElement, reloadToken }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
   const [allElements, setAllElements] = useState([])
@@ -135,6 +135,7 @@ export default function L2Architecture({ projectId, requestedId, onOpenCanvas, o
   }, [projectId, l2Id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setWs(null); load() }, [load])
   useEffect(() => { if (requestedId) setL2Id(requestedId) }, [requestedId])
+  useEffect(() => { if (l2Id) onSelect?.(l2Id) }, [l2Id, onSelect])
 
   const saveArch = async (patch) => {
     setBusy(true)

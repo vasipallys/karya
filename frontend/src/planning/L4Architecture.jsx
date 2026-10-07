@@ -70,7 +70,7 @@ const API = {
 }
 const PILL = (v) => `res-pill ${['high', 'failing', 'todo'].includes(v) ? 'sub-partiallyallocated' : ['low', 'passing', 'done'].includes(v) ? 'ok' : ''}`
 
-export default function L4Architecture({ projectId, requestedId, onOpenCanvas, onOpenElement, reloadToken }) {
+export default function L4Architecture({ projectId, requestedId, onSelect, onOpenCanvas, onOpenElement, reloadToken }) {
   const toast = useToast()
   const [elements, setElements] = useState([])
   const [allElements, setAllElements] = useState([])
@@ -106,6 +106,7 @@ export default function L4Architecture({ projectId, requestedId, onOpenCanvas, o
   }, [projectId, l4Id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setWs(null); load() }, [load])
   useEffect(() => { if (requestedId) setL4Id(requestedId) }, [requestedId])
+  useEffect(() => { if (l4Id) onSelect?.(l4Id) }, [l4Id, onSelect])
 
   const saveArch = async (patch) => {
     setBusy(true)

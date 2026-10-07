@@ -48,12 +48,13 @@ def _level_view(project_id: str, meta: dict[str, Any], elements: list[dict[str, 
     items = _active(elements, level)
     count = len(items)
     proposed = len([e for e in elements if e["level"] == level and e["status"] == "proposed"])
-    scores = []
+    scored: list[tuple[int, dict[str, Any]]] = []
     for element in items:
         try:
-            scores.append(int(meta["scorer"](project_id, element["id"])["score"]))
+            scored.append((int(meta["scorer"](project_id, element["id"])["score"]), element))
         except Exception:
-            scores.append(0)
+            scored.append((0, element))
+    scores = [score for score, _ in scored]
     avg = round(mean(scores)) if scores else 0
     ready = sum(1 for s in scores if s >= READY_THRESHOLD)
     # "expected" — the workflow reaches this level once its parent exists (L1 is always expected).
@@ -65,28 +66,40 @@ def _level_view(project_id: str, meta: dict[str, Any], elements: list[dict[str, 
     else:
         status = "in_progress"
 
+    # Every action names the element it is about (when there is one) so the UI
+    # can land the user on that exact element instead of just a tab.
+    weakest = min(scored, key=lambda pair: pair[0])[1]["id"] if scored else None
+    parent_level = _LEVELS[_index(level) - 1]["level"] if level != "L1" else None
+    first_parent = next((e["id"] for e in _active(elements, parent_level)), None) if parent_level else None
+
     actions: list[dict[str, Any]] = []
     if level == "L1" and count == 0:
         actions.append({"text": "Create an initiative (L1) on the C4 canvas", "tab": "canvas", "tone": "primary"})
     elif level != "L1" and parent_count == 0:
-        actions.append({"text": f"Add a parent {_LEVELS[_index(level) - 1]['level']} first", "tab": _LEVELS[_index(level) - 1]["tab"], "tone": "normal"})
+        actions.append({"text": f"Add a parent {parent_level} first", "tab": _LEVELS[_index(level) - 1]["tab"], "tone": "normal"})
     elif count == 0:
-        actions.append({"text": f"Add {level} elements under the level above on the canvas", "tab": "canvas", "tone": "primary"})
+        actions.append({"text": f"Add {level} elements under the level above on the canvas", "tab": "canvas", "tone": "primary",
+                        "element_id": first_parent})
     else:
         if avg < READY_THRESHOLD:
-            actions.append({"text": f"Open the {meta['label']} workspace and raise readiness", "tab": meta["tab"], "tone": "primary"})
-            actions.append({"text": f"Use “AI generate {level}” to bootstrap, then review", "tab": meta["tab"], "tone": "normal"})
+            actions.append({"text": f"Open the {meta['label']} workspace and raise readiness", "tab": meta["tab"], "tone": "primary",
+                            "element_id": weakest})
+            actions.append({"text": f"Use “AI generate {level}” to bootstrap, then review", "tab": meta["tab"], "tone": "normal",
+                            "element_id": weakest})
         else:
-            actions.append({"text": f"{meta['label']} looks ready — review governance / traceability", "tab": meta["tab"], "tone": "done"})
+            actions.append({"text": f"{meta['label']} looks ready — review governance / traceability", "tab": meta["tab"], "tone": "done",
+                            "element_id": weakest})
         if meta["child"] and expected:
             child_count = len(_active(elements, meta["child"]))
             if child_count == 0:
-                actions.append({"text": f"Decompose into {meta['child']} elements on the canvas", "tab": "canvas", "tone": "normal"})
+                actions.append({"text": f"Decompose into {meta['child']} elements on the canvas", "tab": "canvas", "tone": "normal",
+                                "element_id": items[0]["id"]})
 
     return {
         "level": level, "label": meta["label"], "purpose": meta["purpose"], "tab": meta["tab"],
         "count": count, "proposed": proposed, "ready": ready, "avg_readiness": avg,
         "status": status, "expected": expected, "actions": actions,
+        "weakest_id": weakest,
     }
 
 
@@ -116,7 +129,7 @@ def guide(project_id: str) -> dict[str, Any]:
         "pct": est_pct, "points": rollup["rolled_up_points"],
         "spikes": rollup["spikes"], "pending_splits": rollup["pending_splits"],
         "status": "not_started" if total_stories == 0 else ("ready" if unestimated == 0 else "in_progress"),
-        "actions": _estimation_actions(total_stories, unestimated, rollup),
+        "actions": _estimation_actions(total_stories, unestimated, rollup, _next_unestimated(elements)),
     }
 
     # Overall progress = mean of expected levels' readiness, folding in estimation coverage.
@@ -136,12 +149,23 @@ def guide(project_id: str) -> dict[str, Any]:
     }
 
 
-def _estimation_actions(total: int, unestimated: int, rollup: dict[str, Any]) -> list[dict[str, Any]]:
+def _next_unestimated(elements: list[dict[str, Any]]) -> str | None:
+    """First active L3 story without points — where "estimate next" should land."""
+    for element in elements:
+        if element["level"] != "L3" or element["status"] == "proposed":
+            continue
+        if not any(a["artifact_type"] == "story" and a["points"] is not None for a in element.get("artifacts") or []):
+            return element["id"]
+    return None
+
+
+def _estimation_actions(total: int, unestimated: int, rollup: dict[str, Any], next_story: str | None = None) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     if total == 0:
         actions.append({"text": "Add L3 stories, then estimate them from the canvas", "tab": "canvas", "tone": "normal"})
     elif unestimated > 0:
-        actions.append({"text": f"Estimate the {unestimated} remaining story(ies) from the canvas", "tab": "canvas", "tone": "primary"})
+        actions.append({"text": f"Estimate the {unestimated} remaining story(ies) from the canvas", "tab": "canvas", "tone": "primary",
+                        "element_id": next_story})
         actions.append({"text": "Or run a one-off Quick estimate", "tab": "quick", "tone": "normal"})
     else:
         actions.append({"text": "All stories estimated — review the roll-up", "tab": "rollup", "tone": "done"})

@@ -18,11 +18,11 @@ const dashboard = {
   },
   tasks: [
     { id: 't1', title: 'Build refund', status: 'at_risk', squad_name: 'Refund Squad', project_id: 'p1', project_name: 'Payments', points: 5, due_in_days: 40, overdue: false },
-    { id: 't2', title: 'Payout API', status: 'in_progress', squad_name: 'Refund Squad', project_id: 'p1', project_name: 'Payments', points: 3, due_in_days: -3, overdue: true },
+    { id: 't2', title: 'Payout API', status: 'in_progress', squad_name: 'Refund Squad', project_id: 'p1', l1_id: 'l1-pay', project_name: 'Payments', points: 3, due_in_days: -3, overdue: true },
   ],
   actions: [
     { id: 'a1', type: 'at_risk_work', severity: 'high', title: 'Build refund', detail: 'At-risk work in Refund Squad', project_id: 'p1', project_name: 'Payments', category: 'work' },
-    { id: 'a2', type: 'okr_off_track', severity: 'high', title: 'Cut latency', detail: 'OKR off track · you are the owner', project_id: 'p1', project_name: 'Payments', category: 'okr' },
+    { id: 'a2', type: 'okr_off_track', severity: 'high', title: 'Cut latency', detail: 'OKR off track · you are the owner', project_id: 'p1', l1_id: 'l1-pay', project_name: 'Payments', category: 'okr' },
     { id: 'a3', type: 'open_comment', severity: 'low', title: 'Confirm rollback', detail: 'Open review comment · Payments', project_id: 'p1', project_name: 'Payments', category: 'comment' },
   ],
 }
@@ -46,13 +46,13 @@ describe('HomeInbox', () => {
     expect(screen.getByText(/you are the owner/)).toBeInTheDocument()
   })
 
-  it('deep-links a task to its project L1 plan', async () => {
+  it('deep-links a task to its own L1 initiative plan', async () => {
     api.homeInbox.mockResolvedValue(dashboard)
     const onNavigate = vi.fn()
     render(<HomeInbox onNavigate={onNavigate} />)
 
     fireEvent.click(await screen.findByText('Payout API'))
-    expect(onNavigate).toHaveBeenCalledWith({ kind: 'project', id: 'p1', tab: 'planning' })
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'project', id: 'p1', tab: 'planning', elementId: 'l1-pay' })
   })
 
   it.each([
@@ -84,7 +84,7 @@ describe('HomeInbox', () => {
     expect(screen.getByText('Cut latency')).toBeInTheDocument()
     expect(screen.queryByText('Payout API')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Cut latency'))
-    expect(onNavigate).toHaveBeenCalledWith({ kind: 'project', id: 'p1', tab: 'planning' })
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'project', id: 'p1', tab: 'planning', elementId: 'l1-pay' })
     fireEvent.click(screen.getByRole('button', { name: /Back to Platforms/ }))
     expect(onBack).toHaveBeenCalled()
   })

@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
 vi.mock('./api/client', () => ({
@@ -48,12 +48,16 @@ vi.mock('./screens/AdminConsole', () => ({
 vi.mock('./screens/Login', () => ({ default: () => null }))
 vi.mock('./screens/NewProjectWizard', () => ({ default: () => null }))
 vi.mock('./screens/ProjectWorkspace', () => ({
-  default: ({ projectId, requestedTab }) => <h1>Project {projectId} / {requestedTab?.id || 'default'}</h1>,
+  default: ({ projectId, requestedTab, onLocationChange }) => <div>
+    <h1>Project {projectId} / {requestedTab?.id || 'default'}{requestedTab?.elementId ? ` @ ${requestedTab.elementId}` : ''}</h1>
+    <button onClick={() => onLocationChange({ tab: 'l2arch', elementId: 'e2' })}>Focus L2</button>
+  </div>,
 }))
 vi.mock('./screens/QuickEstimate', () => ({ default: () => null }))
 vi.mock('./components/AskAiDialog', () => ({ default: () => null }))
 
 describe('App home deep links', () => {
+  beforeEach(() => window.history.replaceState(null, '', '#/'))
   afterEach(() => cleanup())
 
   it('opens the focused actions route and returns to Platforms', () => {
@@ -79,5 +83,22 @@ describe('App home deep links', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Platforms' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open project work' }))
     expect(screen.getByRole('heading', { name: 'Project p1 / planning' })).toBeInTheDocument()
+  })
+
+  it('mirrors the workspace location into the URL hash', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open project work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Focus L2' }))
+    expect(window.location.hash).toBe('#/p/p1/l2arch/e2')
+  })
+
+  it('restores a project tab and element from the URL on load and on back/forward', () => {
+    window.history.replaceState(null, '', '#/p/p9/l3arch/e3')
+    render(<App />)
+    expect(screen.getByRole('heading', { name: 'Project p9 / l3arch @ e3' })).toBeInTheDocument()
+
+    window.history.replaceState(null, '', '#/admin/reporting')
+    act(() => { window.dispatchEvent(new PopStateEvent('popstate')) })
+    expect(screen.getByRole('heading', { name: 'Admin section: reporting / default' })).toBeInTheDocument()
   })
 })
